@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.Tony.Whist</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Whist</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+			<key>NSUbiquitousContainerAllowsContentAccess</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>com.apple.developer.nearby-interaction</key>
+	<true/>
+	<key>com.apple.developer.networking.localNetworkUsageDescription</key>
+	<string>This app needs to access your local network to enable multiplayer functionality.</string>
+	<key>NSUbiquitousContainerIdentifiers</key>
+	<string>iCloud.com.Tony.Whist</string>
+</dict>
+</plist>

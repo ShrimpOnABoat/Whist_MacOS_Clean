@@ -1,0 +1,520 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9502AE9C2DB3EA2E00990C9E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 9502AE9B2DB3EA2E00990C9E /* GoogleService-Info.plist */; };
+		9532E16C2DBAFC0A0001A523 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E16B2DBAFC0A0001A523 /* WebRTC */; };
+		9532E16F2DBAFC950001A523 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E16E2DBAFC950001A523 /* FirebaseAnalytics */; settings = {ATTRIBUTES = (Required, ); }; };
+		9532E1712DBAFC950001A523 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E1702DBAFC950001A523 /* FirebaseAnalyticsOnDeviceConversion */; };
+		9532E1732DBAFC950001A523 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E1722DBAFC950001A523 /* FirebaseAnalyticsWithoutAdIdSupport */; };
+		9532E1752DBAFC950001A523 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E1742DBAFC950001A523 /* FirebaseAppCheck */; };
+		9532E1772DBAFC950001A523 /* FirebaseAppDistribution-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E1762DBAFC950001A523 /* FirebaseAppDistribution-Beta */; };
+		9532E1792DBAFD740001A523 /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E1782DBAFD740001A523 /* FirebaseDatabase */; };
+		9532E17B2DBAFD9D0001A523 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E17A2DBAFD9D0001A523 /* FirebaseAuth */; };
+		9532E17D2DBAFDB70001A523 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E17C2DBAFDB70001A523 /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		9502AE9B2DB3EA2E00990C9E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		953011AE2DBAF98600662D7D /* absl.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = absl.framework; sourceTree = "<group>"; };
+		953011B02DBAF99000662D7D /* FirebaseFirestoreInternal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = FirebaseFirestoreInternal.framework; sourceTree = "<group>"; };
+		953011B12DBAF99000662D7D /* grpcpp.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = grpcpp.framework; sourceTree = "<group>"; };
+		953011B22DBAF99000662D7D /* GoogleAppMeasurementIdentitySupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GoogleAppMeasurementIdentitySupport.framework; sourceTree = "<group>"; };
+		953011B32DBAF99000662D7D /* grpc.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = grpc.framework; sourceTree = "<group>"; };
+		953011B42DBAF99000662D7D /* GoogleAppMeasurement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GoogleAppMeasurement.framework; sourceTree = "<group>"; };
+		953011B52DBAF99000662D7D /* openssl_grpc.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = openssl_grpc.framework; sourceTree = "<group>"; };
+		953011B62DBAF99100662D7D /* FirebaseAnalytics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = FirebaseAnalytics.framework; sourceTree = "<group>"; };
+		953011B72DBAF99100662D7D /* WebRTC.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = WebRTC.framework; sourceTree = "<group>"; };
+		95A0C6AA2CEB85EB00EA513A /* Whist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Whist.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9597BA882D67CDED00DB0136 /* Exceptions for "Whist" folder in "Whist" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 95A0C6A92CEB85EB00EA513A /* Whist */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		95A0C6AC2CEB85EB00EA513A /* Whist */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9597BA882D67CDED00DB0136 /* Exceptions for "Whist" folder in "Whist" target */,
+			);
+			path = Whist;
+			sourceTree = "<group>";
+		};
+		95E9A4422D0DDB9700505A6B /* WhistTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WhistTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		95A0C6A72CEB85EB00EA513A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9532E16F2DBAFC950001A523 /* FirebaseAnalytics in Frameworks */,
+				9532E1712DBAFC950001A523 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */,
+				9532E16C2DBAFC0A0001A523 /* WebRTC in Frameworks */,
+				9532E1752DBAFC950001A523 /* FirebaseAppCheck in Frameworks */,
+				9532E1732DBAFC950001A523 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */,
+				9532E17D2DBAFDB70001A523 /* FirebaseFirestore in Frameworks */,
+				9532E1792DBAFD740001A523 /* FirebaseDatabase in Frameworks */,
+				9532E1772DBAFC950001A523 /* FirebaseAppDistribution-Beta in Frameworks */,
+				9532E17B2DBAFD9D0001A523 /* FirebaseAuth in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		95A0C6A12CEB85EB00EA513A = {
+			isa = PBXGroup;
+			children = (
+				95A0C6AC2CEB85EB00EA513A /* Whist */,
+				95E9A4422D0DDB9700505A6B /* WhistTests */,
+				95E9A44A2D0DDC1800505A6B /* Frameworks */,
+				95A0C6AB2CEB85EB00EA513A /* Products */,
+				9502AE9B2DB3EA2E00990C9E /* GoogleService-Info.plist */,
+			);
+			sourceTree = "<group>";
+		};
+		95A0C6AB2CEB85EB00EA513A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				95A0C6AA2CEB85EB00EA513A /* Whist.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		95E9A44A2D0DDC1800505A6B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				953011B62DBAF99100662D7D /* FirebaseAnalytics.framework */,
+				953011B02DBAF99000662D7D /* FirebaseFirestoreInternal.framework */,
+				953011B42DBAF99000662D7D /* GoogleAppMeasurement.framework */,
+				953011B22DBAF99000662D7D /* GoogleAppMeasurementIdentitySupport.framework */,
+				953011B32DBAF99000662D7D /* grpc.framework */,
+				953011B12DBAF99000662D7D /* grpcpp.framework */,
+				953011B52DBAF99000662D7D /* openssl_grpc.framework */,
+				953011B72DBAF99100662D7D /* WebRTC.framework */,
+				953011AE2DBAF98600662D7D /* absl.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		95A0C6A92CEB85EB00EA513A /* Whist */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 95A0C6B92CEB85ED00EA513A /* Build configuration list for PBXNativeTarget "Whist" */;
+			buildPhases = (
+				95A0C6A62CEB85EB00EA513A /* Sources */,
+				95A0C6A72CEB85EB00EA513A /* Frameworks */,
+				95A0C6A82CEB85EB00EA513A /* Resources */,
+				9532E1872DBB031F0001A523 /* Remove Extended Attributes */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				95A0C6AC2CEB85EB00EA513A /* Whist */,
+			);
+			name = Whist;
+			packageProductDependencies = (
+				9532E16B2DBAFC0A0001A523 /* WebRTC */,
+				9532E16E2DBAFC950001A523 /* FirebaseAnalytics */,
+				9532E1702DBAFC950001A523 /* FirebaseAnalyticsOnDeviceConversion */,
+				9532E1722DBAFC950001A523 /* FirebaseAnalyticsWithoutAdIdSupport */,
+				9532E1742DBAFC950001A523 /* FirebaseAppCheck */,
+				9532E1762DBAFC950001A523 /* FirebaseAppDistribution-Beta */,
+				9532E1782DBAFD740001A523 /* FirebaseDatabase */,
+				9532E17A2DBAFD9D0001A523 /* FirebaseAuth */,
+				9532E17C2DBAFDB70001A523 /* FirebaseFirestore */,
+			);
+			productName = Whist;
+			productReference = 95A0C6AA2CEB85EB00EA513A /* Whist.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		95A0C6A22CEB85EB00EA513A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1630;
+				TargetAttributes = {
+					95A0C6A92CEB85EB00EA513A = {
+						CreatedOnToolsVersion = 16.1;
+					};
+				};
+			};
+			buildConfigurationList = 95A0C6A52CEB85EB00EA513A /* Build configuration list for PBXProject "Whist" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 95A0C6A12CEB85EB00EA513A;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9532E16A2DBAFC0A0001A523 /* XCRemoteSwiftPackageReference "WebRTC" */,
+				9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 95A0C6AB2CEB85EB00EA513A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				95A0C6A92CEB85EB00EA513A /* Whist */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		95A0C6A82CEB85EB00EA513A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9502AE9C2DB3EA2E00990C9E /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		9532E1872DBB031F0001A523 /* Remove Extended Attributes */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 12;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Remove Extended Attributes";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Remove troublesome extended attributes (like com.apple.FinderInfo)\n# which cause strict codesign verification failures.\n\n# Use the specific path Xcode uses for code signing preparations\nTARGET_BUNDLE=\"${CODESIGNING_FOLDER_PATH}\"\n\n# Check if the variable is set and points to a directory\nif [ -d \"$TARGET_BUNDLE\" ]; then\n  echo \"Removing extended attributes from $TARGET_BUNDLE\"\n  /usr/bin/xattr -cr \"$TARGET_BUNDLE\"\n  echo \"Finished removing extended attributes.\"\nelse\n  echo \"Warning: CODESIGNING_FOLDER_PATH variable not set or not a directory ($TARGET_BUNDLE). Skipping xattr removal.\"\n  # You might want to exit with an error if this happens unexpectedly\n  # exit 1 \nfi\n\n# Ensure the script phase exits successfully\nexit 0 \n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		95A0C6A62CEB85EB00EA513A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		95A0C6B72CEB85ED00EA513A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = LBXFB7E892;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		95A0C6B82CEB85ED00EA513A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = LBXFB7E892;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		95A0C6BA2CEB85ED00EA513A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Whist/WhistRelease.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"Whist/Preview Content\"";
+				DEVELOPMENT_TEAM = LBXFB7E892;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Whist/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Whist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.card-games";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Tony.Whist;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		95A0C6BB2CEB85ED00EA513A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Whist/WhistRelease.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"Whist/Preview Content\"";
+				DEVELOPMENT_TEAM = LBXFB7E892;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Whist/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Whist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.card-games";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Tony.Whist;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		95A0C6A52CEB85EB00EA513A /* Build configuration list for PBXProject "Whist" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				95A0C6B72CEB85ED00EA513A /* Debug */,
+				95A0C6B82CEB85ED00EA513A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		95A0C6B92CEB85ED00EA513A /* Build configuration list for PBXNativeTarget "Whist" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				95A0C6BA2CEB85ED00EA513A /* Debug */,
+				95A0C6BB2CEB85ED00EA513A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9532E16A2DBAFC0A0001A523 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 135.0.0;
+			};
+		};
+		9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.12.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9532E16B2DBAFC0A0001A523 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16A2DBAFC0A0001A523 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
+		};
+		9532E16E2DBAFC950001A523 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		9532E1702DBAFC950001A523 /* FirebaseAnalyticsOnDeviceConversion */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsOnDeviceConversion;
+		};
+		9532E1722DBAFC950001A523 /* FirebaseAnalyticsWithoutAdIdSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsWithoutAdIdSupport;
+		};
+		9532E1742DBAFC950001A523 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
+		};
+		9532E1762DBAFC950001A523 /* FirebaseAppDistribution-Beta */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseAppDistribution-Beta";
+		};
+		9532E1782DBAFD740001A523 /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
+		};
+		9532E17A2DBAFD9D0001A523 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		9532E17C2DBAFDB70001A523 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9532E16D2DBAFC950001A523 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 95A0C6A22CEB85EB00EA513A /* Project object */;
+}

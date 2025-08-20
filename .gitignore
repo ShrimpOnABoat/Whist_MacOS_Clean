@@ -1,0 +1,31 @@
+# Xcode / Derived
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# SwiftPM / Cocoapods / Carthage (keep if you use them)
+.swiftpm/
+.idea/
+Pods/
+Carthage/
+Package.resolved
+
+# Logs
+*.log
+
+# Your secrets
+GoogleService-Info.plist
+Secrets/
+*.pem
+*.p12
+*.key
+*.keystore
+.env
+
+Whist/Secrets.plist
+
