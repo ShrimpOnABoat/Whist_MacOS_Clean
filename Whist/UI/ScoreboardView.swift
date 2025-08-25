@@ -196,7 +196,11 @@ struct ScoreBoardView: View {
                 } else if player.place == 3 {
                     extraCards = 1
                     let playerScore = player.scores[safe: gameManager.gameState.round - 2] ?? 0
-                    let secondPlayerScore = gameManager.gameState.players.first(where: { $0.place == 2 })?.scores[safe: gameManager.gameState.round - 2] ?? 0
+                    let secondPlayerScore = gameManager.gameState.players
+                        .map { $0.scores.last ?? 0 }
+                        .sorted(by: >)
+                        .dropFirst()
+                        .first ?? 0
                     
                     if player.monthlyLosses > 0 || Double(playerScore) <= 0.5 * Double(secondPlayerScore) {
                         extraCards = 2

@@ -128,6 +128,7 @@ struct WhistApp: App {
                 if preferences.playerId == "toto" {
                     DatabaseMenuCommands(preferences: preferences, gameManager: gameManager)
                 }
+                NetworkMenuCommands(gameManager: gameManager)
             }
         }
         
@@ -395,5 +396,19 @@ struct IdentityPromptView: View {
         }
         .frame(width: 300, height: 150)
         .padding()
+    }
+}
+
+struct NetworkMenuCommands: Commands {
+    let gameManager: GameManager
+
+    var body: some Commands {
+        CommandMenu("Network") {
+            Button("Rattraper les actions manquées") {
+                gameManager.scheduleCatchUp(reason: "Manual trigger via menu")
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
+            .help("Trigger a manual catch-up of missed actions")
+        }
     }
 }

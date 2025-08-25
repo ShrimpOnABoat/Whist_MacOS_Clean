@@ -63,12 +63,17 @@ class GameManager: ObservableObject {
     let answerWaitTimeout: TimeInterval = 20.0 // Time to wait for an answer if I'm an offerer
     let iceExchangeTimeout: TimeInterval = 25.0 // Time to complete ICE and connect after SDPs
     #endif
-
+    var lastAppliedSequence: Int = 0
+    var buffered: [Int: GameAction] = [:]
+    var catchUpWorkItem: DispatchWorkItem?
+    var canCatchUp: Bool = false
+    @Published var isRestoring = false
+    @Published var restorationProgress: Double = 0.0
+    
     let preferences: Preferences
     let soundManager = SoundManager()
     static let SM = ScoresManager.shared
     var persistence: GamePersistence = GamePersistence()
-    @Published private(set) var isRestoring = false
     
     var cancellables = Set<AnyCancellable>()
     var isGameSetup: Bool = false
@@ -168,6 +173,9 @@ class GameManager: ObservableObject {
     
     // MARK: startNewGame
     func startNewGameAction() {
+//        Task {
+//            await persistence.clearGameActions()
+//        }
         if !isFirstGame {
             persistOrderAndDealer()
         }
@@ -187,6 +195,8 @@ class GameManager: ObservableObject {
             $0.hand.removeAll()
             $0.trickCards.removeAll()
             $0.state = .idle
+            $0.onlyWins = true
+            $0.onlyWinsBonus = false
         }
         
         // Move to the next dealer in playOrder so that another player starts the game
@@ -200,8 +210,14 @@ class GameManager: ObservableObject {
     }
     
     func newGameRound() {
+        var roundString: String
         if let message = gameState.localPlayer?.id.rawValue.uppercased() {
-            let message2 = message + " / round \(gameState.round + 1)"
+            if gameState.round < 3 {
+                roundString = "\(gameState.round + 1)/3"
+            } else {
+                roundString = "\(gameState.round-1)"
+            }
+            let message2 = message + " / round \(roundString)"
             let padding = 3 // Padding around the message inside the box
             let lineLength = message2.count + padding * 2
             let borderLine = String(repeating: "*", count: lineLength)
@@ -431,7 +447,7 @@ class GameManager: ObservableObject {
         
         // Check if bet legal
         if !(bet > -1 && bet <= max(gameState.round - 2, 1)) {
-            logger.fatalErrorAndLog("Received a illegal bet from \(playerId) with \(bet).")
+            logger.fatalErrorAndLog("Received a illegal bet from \(playerId) with \(bet) at round \(gameState.round).")
         }
 
         // Set the player's bet
@@ -615,6 +631,7 @@ class GameManager: ObservableObject {
                 }
             }
         } else {
+            guard bet != nil else { return } // in case it was cancelled and the game was restored
             // first bet for this round
             localPlayer.announcedTricks.append(bet!)
             localPlayer.madeTricks.append(0)
@@ -738,8 +755,41 @@ class GameManager: ObservableObject {
     
     // MARK: Restore saved actions
     
+    /// Logs additional payload details for selected action types
+    private func actionPayloadString(_ action: GameAction) -> String {
+        switch action.type {
+        case .playCard:
+            guard let card = try? JSONDecoder().decode(Card.self, from: action.payload) else {
+                return "nil"
+            }
+            return "\(card)"
+        case .choseBet:
+            if let bet = try? JSONDecoder().decode(Int.self, from: action.payload) {
+                return "\(bet)"
+            } else {
+                return "nil"
+            }
+        case .choseTrump:
+            if let trumpCard = try? JSONDecoder().decode(Card.self, from: action.payload) {
+                return "\(trumpCard)"
+            } else {
+                return "nil"
+            }
+        case .discard:
+            if let discardedCards = try? JSONDecoder().decode([Card].self, from: action.payload) {
+                let list = discardedCards.map { "\($0)" }.joined(separator: ", ")
+                return "[\(list)]"
+            } else {
+                return "[]"
+            }
+        default:
+            return ""
+        }
+    }
+
     /// Restores the game state by loading and replaying all saved GameAction events.
     func restoreGameFromActions() async -> Bool {
+        var round = 0
         logger.log("Restoring game from saved actions...")
         // Load saved actions
         guard let actions = await persistence.loadGameActions(),
@@ -747,34 +797,63 @@ class GameManager: ObservableObject {
             logger.log("No fresh game actions (startNewGame) found. Starting new game...")
             return false
         }
-        // Sort all actions by timestamp
-        let sortedActions = actions.sorted { $0.timestamp < $1.timestamp }
-        
-        // Remove all sendState actions except the last one per player
+        // Sort all actions by sequence (ascending)
+        let sortedActions = actions.sorted { $0.sequence < $1.sequence }
+
+        // Pick the latest playOrder and dealer actions to establish authoritative state first
+        let latestPlayOrder = sortedActions.last { $0.type == .playOrder }
+        let latestDealer = sortedActions.last { $0.type == .dealer }
+
+        // Priority actions to run first (order between them doesn't matter)
+        var priorityActions: [GameAction] = []
+        if let po = latestPlayOrder { priorityActions.append(po) }
+        if let dl = latestDealer { priorityActions.append(dl) }
+
+        // Remaining actions exclude all dealer/playOrder (we've established the final ones above)
+        let remaining = sortedActions.filter { $0.type != .dealer && $0.type != .playOrder }
+
+        // From the remaining actions, remove all sendState except the latest per player
         var latestSendStateByPlayer: [PlayerId: GameAction] = [:]
-        for action in sortedActions where action.type == .sendState {
+        for action in remaining where action.type == .sendState {
             latestSendStateByPlayer[action.playerId] = action
         }
-
-        let filteredActions: [GameAction] = sortedActions.filter { action in
-            action.type != .sendState || latestSendStateByPlayer[action.playerId]?.timestamp == action.timestamp
+        let tailActions: [GameAction] = remaining.filter { action in
+            action.type != .sendState || latestSendStateByPlayer[action.playerId]?.sequence == action.sequence
         }
 
+        // Final ordered list: priority actions first, then the rest in sequence order
+        let filteredActions: [GameAction] = priorityActions + tailActions
+
+        // For logging (round counting is only for sendDeck in the tail and remains accurate)
+        var actionsProcessed: Int = 0
+        let totalActions = filteredActions.count
         for action in filteredActions {
-            logger.log("Filtered action: \(action.playerId.rawValue) - \(action.type)")
+            if action.type == .sendDeck {
+                round += 1
+                if round < 4 {
+                    logger.log("[\(String(format: "%04d", action.sequence))] \(action.playerId.rawValue) - \(action.type) - ROUND \(round)/3")
+                } else {
+                    logger.log("[\(String(format: "%04d", action.sequence))] \(action.playerId.rawValue) - \(action.type) - ROUND \(round-2)")
+                }
+            } else {
+                logger.log("[\(String(format: "%04d", action.sequence))] \(action.playerId.rawValue) - \(action.type)(\(actionPayloadString(action)))")
+            }
         }
-        logger.log("Filtered to \(filteredActions.count) actions after pruning redundant sendState actions.")
+        logger.log("Filtered to \(filteredActions.count) actions after prioritizing playOrder/dealer and pruning redundant sendState actions.")
 
         // Replay each action through your existing handler
         isRestoring = true
         logger.debug("😀😀😀 isRestoring is true!!!")
         gameState.currentPhase = .setPlayOrder
         for action in filteredActions {
-            while isAwaitingActionCompletionDuringRestore { // to make sure the last action is finished before handling the next one
+            while isAwaitingActionCompletionDuringRestore { // ensure sequential apply during restore
                 try? await Task.sleep(nanoseconds: 50_000_000) // 50 ms
             }
             handleActionImmediately(action)
+            actionsProcessed += 1
+            restorationProgress = Double(actionsProcessed) / Double(totalActions)
         }
+        restorationProgress = 1.0
         // hack
         if gameState.currentPhase == .playingTricks {
             for card in gameState.table {
@@ -782,7 +861,7 @@ class GameManager: ObservableObject {
             }
         }
         isRestoring = false
-        logger.debug("😀😀😀 isRestoring is false!!!")
+        logger.debug("😀😀😀 isRestoring is false.")
 
         self.objectWillChange.send()
         checkAndAdvanceStateIfNeeded()

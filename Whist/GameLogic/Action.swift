@@ -39,6 +39,7 @@ struct GameAction: Codable {
     let type: ActionType
     let payload: Data
     let timestamp: TimeInterval
+    let sequence: Int
 }
 
 // Example of creating a playCard action
@@ -49,7 +50,8 @@ extension GameAction {
             playerId: playerId,
             type: .playCard,
             payload: payloadData,
-            timestamp: Date().timeIntervalSince1970
+            timestamp: Date().timeIntervalSince1970,
+            sequence: 0
         )
     }
 }

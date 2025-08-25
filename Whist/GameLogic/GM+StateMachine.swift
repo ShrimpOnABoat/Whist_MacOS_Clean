@@ -52,7 +52,7 @@ extension GameManager {
     //     MARK: Transition
     
     func transition(to newPhase: GamePhase) {
-        logger.log("🔁 Forcing transition to \(newPhase) from \(gameState.currentPhase)")
+        logger.log("➡️➡️➡️ Transitioning from \(gameState.currentPhase) to \(newPhase)")
         let multiplePhases: Set<GamePhase> = [.bidding, .playingTricks]
         if gameState.currentPhase == newPhase && !multiplePhases.contains(newPhase) {
             logger.debug("No transition needed")
@@ -64,7 +64,6 @@ extension GameManager {
                 logger.log("Transitionning to waitingToStart with UI refresh")
             }
         }
-        logger.log("Transitioning from \(gameState.currentPhase) to \(newPhase)")
         gameState.currentPhase = newPhase
         handleStateTransition()
     }
@@ -77,15 +76,18 @@ extension GameManager {
         if gameState.localPlayer?.state != newState {
             gameState.localPlayer?.state = newState
             // If entering a state where the player must act, start the slowpoke timer
-            switch newState {
-            case .choosingTrump, .bidding, .discarding, .playing:
-                startSlowpokeTimer()
-            default:
-                break
+            if !isRestoring {
+                switch newState {
+                case .choosingTrump, .bidding, .discarding, .playing:
+                    startSlowpokeTimer()
+                default:
+                    break
+                }
+                logger.log("My state is now \(newState)")
+                sendStateToPlayers()
+            } else {
+                logger.log("My state is now \(newState) (restore mode: no broadcast)")
             }
-            logger.log("My state is now \(newState)")
-            sendStateToPlayers()
-//            saveGameState(gameState)
         }
     }
     
@@ -102,8 +104,8 @@ extension GameManager {
             
         case .resumeSavedGame:
             Task {
-//                let isSavedGame = await checkAndRestoreSavedGame()
                 let isSavedGame = await restoreGameFromActions()
+                canCatchUp = true
                 if !isSavedGame {
                     transition(to: .setPlayOrder)
                 }
@@ -119,11 +121,8 @@ extension GameManager {
         case .setupGame:
             setPlayerState(to: .idle)
             isAwaitingActionCompletionDuringRestore = true
-            let setupGameId = Int.random(in: 0...1000)
-            logger.debug("setupGameId set to \(setupGameId)")
             setupGame {
                 self.transition(to: .waitingToStart)
-                logger.debug("setupGame finished with Id \(setupGameId)")
                 self.isAwaitingActionCompletionDuringRestore = false
             }
             

@@ -107,8 +107,8 @@ class SimpleLogger {
         }
     }
     
-    func fatalErrorAndLog(_ message: String) -> Never {
-        log(message)
+    func fatalErrorAndLog(_ message: String, function: String = #function) -> Never {
+        log(message, function: function)
         fatalError(message)
     }
     

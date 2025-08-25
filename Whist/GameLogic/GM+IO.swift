@@ -29,6 +29,32 @@ extension GameManager {
         let username: String
     }
 
+    // MARK: - Sequencing helpers
+    private func nextSequence(_ completion: @escaping (Int) -> Void) {
+        Task {
+            do {
+                let seq = try await FirebaseService.shared.nextActionSequence()
+                completion(seq)
+            } catch {
+                logger.fatalErrorAndLog("Sequence error: \(error.localizedDescription).")
+            }
+        }
+    }
+
+    private func buildActionWithSequence(type: GameAction.ActionType, payload: Data, playerId: PlayerId, completion: @escaping (GameAction) -> Void) {
+        guard !isRestoring else { return }
+        nextSequence { seq in
+            let action = GameAction(
+                playerId: playerId,
+                type: type,
+                payload: payload,
+                timestamp: Date().timeIntervalSince1970,
+                sequence: seq
+            )
+            completion(action)
+        }
+    }
+
     // MARK: - handleReceivedAction
     
     func handleReceivedAction(_ action: GameAction) {
@@ -50,8 +76,11 @@ extension GameManager {
     
     func processAction(_ action: GameAction) {
         logger.log("Processing action \(action.type) from player \(action.playerId)...")
+        
+        lastAppliedSequence = max(action.sequence, lastAppliedSequence)
+        logger.log("lastAppliedSequence is now: \(lastAppliedSequence)")
+        
         switch action.type {
-            
         case .playOrder:
             guard let playOrder = try? JSONDecoder().decode([PlayerId].self, from: action.payload) else {
                 logger.log("Failed to decode playOrder.")
@@ -139,13 +168,9 @@ extension GameManager {
         guard let localPlayerID = gameState.localPlayer?.id, localPlayerID == .toto else { return }
 
         if let playOrderData = try? JSONEncoder().encode(playOrder) {
-            let action = GameAction(
-                playerId: localPlayerID,
-                type: .playOrder,
-                payload: playOrderData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .playOrder, payload: playOrderData, playerId: localPlayerID) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode the play order")
         }
@@ -162,13 +187,9 @@ extension GameManager {
         
         // Encode the filtered deck and create the action
         if let deckData = try? JSONEncoder().encode(gameState.deck) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .sendDeck,
-                payload: deckData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .sendDeck, payload: deckData, playerId: localPlayer.id) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode the deck cards")
         }
@@ -183,13 +204,9 @@ extension GameManager {
         }
         
         if let cardData = try? JSONEncoder().encode(card) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .playCard,
-                payload: cardData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .playCard, payload: cardData, playerId: localPlayer.id) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode the card")
         }
@@ -203,13 +220,9 @@ extension GameManager {
         }
         
         if let betData = try? JSONEncoder().encode(bet) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .choseBet,
-                payload: betData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .choseBet, payload: betData, playerId: localPlayer.id) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode the bet")
         }
@@ -223,13 +236,9 @@ extension GameManager {
         }
         
         if let trumpData = try? JSONEncoder().encode(trump) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .choseTrump,
-                payload: trumpData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .choseTrump, payload: trumpData, playerId: localPlayer.id) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode the trump card")
         }
@@ -243,19 +252,19 @@ extension GameManager {
         }
         
         if let discardedCardsData = try? JSONEncoder().encode(discardedCards) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .discard,
-                payload: discardedCardsData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .discard, payload: discardedCardsData, playerId: localPlayer.id) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode the trump card")
         }
     }
     
     func sendStateToPlayers() {
+        guard !isRestoring else {
+            logger.debug("Skipping sendStateToPlayers during restore")
+            return
+        }
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
             return
@@ -264,13 +273,9 @@ extension GameManager {
         logger.log("Sending new state \(state.message) to players")
         
         if let state = try? JSONEncoder().encode(state) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .sendState,
-                payload: state,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persistAndSend(action)
+            buildActionWithSequence(type: .sendState, payload: state, playerId: localPlayer.id) { action in
+                self.persistAndSend(action)
+            }
         } else {
             logger.log("Error: Failed to encode player's state")
         }
@@ -280,13 +285,13 @@ extension GameManager {
         logger.log("Sending start new game action to players")
         guard let localPlayer = gameState.localPlayer else { return }
 
-        let action = GameAction(
-            playerId: localPlayer.id,
-            type: .startNewGame,
-            payload: Data(),
-            timestamp: Date().timeIntervalSince1970
-        )
-        persistAndSend(action)
+        Task {
+            do {
+                self.buildActionWithSequence(type: .startNewGame, payload: Data(), playerId: localPlayer.id) { action in
+                    self.persistAndSend(action)
+                }
+            }
+        }
     }
     
     func sendCancelTrumpChoice() {
@@ -296,13 +301,9 @@ extension GameManager {
             return
         }
         
-        let action = GameAction(
-            playerId: localPlayer.id,
-            type: .cancelTrump,
-            payload: Data(),
-            timestamp: Date().timeIntervalSince1970
-        )
-        persistAndSend(action)
+        buildActionWithSequence(type: .cancelTrump, payload: Data(), playerId: localPlayer.id) { action in
+            self.persistAndSend(action)
+        }
     }
     
     func sendAmSlowPoke() {
@@ -312,13 +313,9 @@ extension GameManager {
             return
         }
         
-        let action = GameAction(
-            playerId: localPlayer.id,
-            type: .amSlowPoke,
-            payload: Data(),
-            timestamp: Date().timeIntervalSince1970
-        )
-        persistAndSend(action)
+        buildActionWithSequence(type: .amSlowPoke, payload: Data(), playerId: localPlayer.id) { action in
+            self.persistAndSend(action)
+        }
     }
     
     func sendHonk() {
@@ -332,13 +329,9 @@ extension GameManager {
             return
         }
         
-        let action = GameAction(
-            playerId: localPlayer.id,
-            type: .honk,
-            payload: Data(),
-            timestamp: Date().timeIntervalSince1970
-        )
-        persistAndSend(action)
+        buildActionWithSequence(type: .honk, payload: Data(), playerId: localPlayer.id) { action in
+            self.persistAndSend(action)
+        }
         
         playSound(named: "pouet")
     }
@@ -360,34 +353,28 @@ extension GameManager {
         logger.log("Sending playOrder and Dealer to other players")
         
         if let playOrderData = try? JSONEncoder().encode(gameState.playOrder) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .playOrder,
-                payload: playOrderData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persist(action)
+            buildActionWithSequence(type: .playOrder, payload: playOrderData, playerId: localPlayer.id) { action in
+                self.persist(action)
+            }
         } else {
             logger.log("Error: Failed to encode the play order")
         }
 
         if let dealerData = try? JSONEncoder().encode(gameState.dealer) {
-            let action = GameAction(
-                playerId: localPlayer.id,
-                type: .dealer,
-                payload: dealerData,
-                timestamp: Date().timeIntervalSince1970
-            )
-            persist(action)
+            buildActionWithSequence(type: .dealer, payload: dealerData, playerId: localPlayer.id) { action in
+                self.persist(action)
+            }
         } else {
             logger.log("Error: Failed to encode the dealer")
         }
     }
     
-    
-    
     func persistAndSend(_ action: GameAction) {
         guard !isRestoring else { return }
+        
+        lastAppliedSequence = max(action.sequence, lastAppliedSequence)
+        logger.log("lastAppliedSequence set to \(lastAppliedSequence)")
+        
         if let actionData = try? JSONEncoder().encode(action),
            let messageString = String(data: actionData, encoding: .utf8) {
             let sent = connectionManager.sendMessage(messageString)
@@ -408,6 +395,56 @@ extension GameManager {
         guard !isRestoring else { return }
         if ![.amSlowPoke, .honk].contains(action.type) {
             saveGameAction(action)
+        }
+    }
+    
+    // MARK: CatchUp
+    func requestCatchUp(from start: Int, to end: Int? = nil) {
+        Task { await catchUp(from: start, to: end) }
+    }
+
+    @MainActor
+    func catchUp(from start: Int, to end: Int?) async {
+        guard !isRestoring else { return }         // reuse your restore lock
+        isRestoring = true
+        defer { isRestoring = false }
+
+        do {
+            // Provide a range loader in FirebaseService
+            let missing = try await FirebaseService.shared
+                .loadGameActions(sequenceGreaterThanOrEqual: start,
+                                 sequenceLessThanOrEqual: end)
+
+            // Defensive sort in case of any server-side quirks
+            let ordered = missing.sorted { $0.sequence < $1.sequence }
+
+            let total = ordered.count
+            var processed = 0
+            self.restorationProgress = 0.0
+
+            for a in ordered {
+                if a.sequence == lastAppliedSequence + 1 {
+                    handleReceivedAction(a)
+                } else if a.sequence > lastAppliedSequence + 1 {
+                    // still a hole → keep waiting; this can happen if end == nil and writes lag
+                    buffered[a.sequence] = a
+                } // else duplicate → skip
+                processed += 1
+                self.restorationProgress = Double(processed) / Double(max(total,1))
+            }
+
+            // After catch-up, drain any buffered consecutive actions
+            while let next = buffered[lastAppliedSequence + 1] {
+                buffered.removeValue(forKey: lastAppliedSequence + 1)
+                handleReceivedAction(next)
+                processed += 1
+                self.restorationProgress = Double(processed) / Double(max(total,1))
+            }
+
+            self.restorationProgress = 1.0
+        } catch {
+            logger.log("Catch-up failed: \(error.localizedDescription)")
+            self.restorationProgress = 0.0
         }
     }
 }

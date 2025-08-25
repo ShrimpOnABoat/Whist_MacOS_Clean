@@ -13,36 +13,6 @@ class GamePersistence {
         logger.log("GamePersistence initialized for Firebase.")
     }
 
-    func saveGameState(_ state: GameState) async {
-        do {
-            try await firebaseService.saveGameState(state)
-            logger.log("GameState saved successfully to Firebase.")
-        } catch {
-            logger.log("Error saving game state to Firebase: \(error.localizedDescription)")
-        }
-    }
-
-    func loadGameState() async -> GameState? {
-        do {
-            let state = try await firebaseService.loadGameState()
-            logger.log("GameState successfully loaded from Firebase.")
-            return state
-        } catch {
-            logger.log("Error loading game state from Firebase: \(error.localizedDescription)")
-            logger.log("No saved game state found or error occurred in Firebase.")
-            return nil
-        }
-    }
-
-    func clearSavedGameState() async {
-        do {
-            try await firebaseService.deleteCurrentGameState()
-            logger.log("Cleared saved game state from Firebase via GamePersistence.")
-        } catch {
-            logger.log("Error clearing saved game state from Firebase via GamePersistence: \(error.localizedDescription)")
-        }
-    }
-    
     func saveGameAction(_ action: GameAction) async {
         do {
             try await firebaseService.saveGameAction(action)
@@ -64,13 +34,14 @@ class GamePersistence {
         }
     }
 
-    /// Deletes all saved GameAction entries from Firestore.
+    /// Deletes all saved GameAction entries from Firestore and resets the action sequence.
     func clearGameActions() async {
         do {
             try await firebaseService.deleteAllGameActions()
-            logger.log("Cleared all game actions from Firebase via GamePersistence.")
+            try await firebaseService.resetActionSequence()
+            logger.log("Cleared all game actions and reset sequence in Firebase via GamePersistence.")
         } catch {
-            logger.log("Error clearing game actions from Firebase: \(error.localizedDescription)")
+            logger.log("Error clearing game actions or resetting sequence in Firebase via GamePersistence: \(error.localizedDescription)")
         }
     }
     

@@ -407,11 +407,50 @@ struct GameView: View {
             }
             // End GeometryReader
             if gameManager.isRestoring {
-                Color.gray.opacity(1)
-                    .ignoresSafeArea()
-                ProgressView("Restauration en cours...")
-                    .progressViewStyle(CircularProgressViewStyle(tint: .orange))
-                    .scaleEffect(1.5)
+                ZStack {
+                    // Frosted backdrop
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+
+                    // Centered progress card
+                    VStack(spacing: 16) {
+                        // Header
+                        VStack(spacing: 6) {
+                            Text("Restauration en cours…")
+                                .font(.headline)
+                            Text("Relecture des actions manquées")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        // Linear progress bar bound to restorationProgress
+                        ProgressView(value: gameManager.restorationProgress, total: 1.0)
+                            .progressViewStyle(.linear)
+                            .frame(maxWidth: 420)
+                            .padding(.horizontal, 4)
+                            .accessibilityValue(Text("\(Int((gameManager.restorationProgress * 100).rounded())) pour cent"))
+
+                        // Helper text
+                        Text("Merci de patienter — cela peut prendre quelques secondes.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.regularMaterial)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                    )
+                    .shadow(radius: 20)
+                    .padding()
+                    .transition(.scale)
+                    .animation(.easeInOut, value: gameManager.restorationProgress)
+                }
             }
             // End ZStack
         } // end ZStack

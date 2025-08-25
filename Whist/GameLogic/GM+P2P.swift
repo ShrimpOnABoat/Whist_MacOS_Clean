@@ -232,6 +232,9 @@ extension GameManager {
             logger.logRTC("✅ P2P Connection established with \(peerId.rawValue)")
             self.cancelConnectionTimer(for: peerId)
             self.updatePlayerConnectionPhase(playerId: peerId, phase: .connected)
+            
+            // Catchup in case actions were sent while we were offline
+            self.scheduleCatchUp(reason: "P2P connection established with \(peerId.rawValue)")
         }
         
         connectionManager.onMessageReceived = { [weak self] (peerId, message) in
@@ -267,6 +270,9 @@ extension GameManager {
                     } else {
                         logger.logRTC("GM: ICE for \(peerId.rawValue) is \(newState.rawValue), phase already .connected.")
                     }
+                    
+                    // Catchup in case actions were sent while we were offline
+                    self.scheduleCatchUp(reason: "ICE \(newState.rawValue) for \(peerId.rawValue)")
 
                 case .disconnected:
                     // ICE connection is temporarily lost. Try to recover.
@@ -793,5 +799,21 @@ extension GameManager {
         } else {
             logger.logRTC("GM: ICE Disconnection Timeout - Peer \(peerId.rawValue) is not Firebase-online. Will not auto-retry P2P now.")
         }
+    }
+    
+    //MARK: CatchUp
+    func scheduleCatchUp(reason: String) {
+        guard canCatchUp else {
+            logger.debug("Cannot catch up now.")
+            return
+        }
+        catchUpWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            logger.log("🔄 Catch-up triggered (\(reason)). From seq \(self.lastAppliedSequence + 1)")
+            self.requestCatchUp(from: self.lastAppliedSequence + 1)
+        }
+        catchUpWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 }
