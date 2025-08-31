@@ -433,7 +433,7 @@ struct GameView: View {
                             .accessibilityValue(Text("\(Int((gameManager.restorationProgress * 100).rounded())) pour cent"))
 
                         // Helper text
-                        Text("Merci de patienter — cela peut prendre quelques secondes.")
+                        Text("Merci de patienter — ça peut prendre un ti boute.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

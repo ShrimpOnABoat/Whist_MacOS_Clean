@@ -128,6 +128,9 @@ class SoundManager: NSObject, AVAudioPlayerDelegate {
 
 extension GameManager {
     func playSound(named filename: String) {
+        #if DEBUG
+        guard gameState.localPlayer?.id == .toto else { return }
+        #endif
         if filename != "pouet" {
             soundManager.playSound(named: filename)
         } else {

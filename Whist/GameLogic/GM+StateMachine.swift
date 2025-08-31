@@ -477,7 +477,7 @@ extension GameManager {
             }
             
         case .showCard:
-            gameState.trumpCards.last?.isFaceDown = false
+//            gameState.trumpCards.last?.isFaceDown = false
             transition(to: .playingTricks)
             
         case .playingTricks:
