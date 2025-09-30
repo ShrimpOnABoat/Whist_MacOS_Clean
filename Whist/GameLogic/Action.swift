@@ -24,14 +24,32 @@ struct GameAction: Codable {
         
         var associatedPhases: [GamePhase] {
             switch self {
-            case .playOrder: return [.setPlayOrder]
-            case .playCard: return [.playingTricks]
-            case .sendDeck: return [.waitingForDeck]
-            case .discard: return [.choosingTrump, .waitingForTrump, .bidding, .discard]
-            case .choseBet: return [.choosingTrump, .waitingForTrump, .bidding, .discard]
-            case .choseTrump: return [.choosingTrump, .waitingForTrump, .bidding, .discard]
-            case .startNewGame: return [.waitingToStart]
-            default: return []
+            case .playOrder:
+                // Accept playOrder not only in .setPlayOrder, but also in all phases
+                // before the deck is sent/received for the new game.
+                return [
+                    .setPlayOrder,
+                    .setupGame,
+                    .waitingToStart,
+                    .newGame,
+                    .setupNewRound,
+                    .waitingForDeck
+                ]
+            case .playCard:
+                return [.playingTricks]
+            case .sendDeck:
+                return [.waitingForDeck]
+            case .discard:
+                return [.choosingTrump, .waitingForTrump, .bidding, .discard]
+            case .choseBet:
+                return [.choosingTrump, .waitingForTrump, .bidding, .discard]
+            case .choseTrump:
+                return [.choosingTrump, .waitingForTrump, .bidding, .discard]
+            case .startNewGame:
+                return [.waitingToStart]
+            default:
+                // [] means "valid in any phase" with your current isActionValidInCurrentPhase logic.
+                return []
             }
         }
     }

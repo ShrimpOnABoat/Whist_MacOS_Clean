@@ -422,7 +422,14 @@ extension GameManager {
             }
             
         case .waitingForDeck:
-            if isDeckReceived {
+            // If restore just finished and I am the dealer, I must kick the dealing flow.
+            if let me = gameState.localPlayer?.id, me == gameState.dealer, !isRestoring {
+                if isDeckReady {
+                    transition(to: .dealingCards)
+                } else {
+                    transition(to: .renderingDeck)
+                }
+            } else if isDeckReceived {
                 transition(to: .dealingCards)
             } else {
                 logger.log("Still waiting for the deck...")
@@ -441,7 +448,7 @@ extension GameManager {
             }
             
         case .waitingForTrump:
-            // If trump chosen, I chose a bid
+            // If trump chosen, I chose a bet
             if gameState.trumpSuit != nil {
                 transition(to: .discard)
             }
@@ -477,7 +484,6 @@ extension GameManager {
             }
             
         case .showCard:
-//            gameState.trumpCards.last?.isFaceDown = false
             transition(to: .playingTricks)
             
         case .playingTricks:
@@ -502,9 +508,6 @@ extension GameManager {
             }
             
         case .scoring:
-            // After scoring logic:
-            // Either start new round: transition(to: .dealingCards)
-            // Or end game: transition(to: .gameOver)
             break
             
         default:
