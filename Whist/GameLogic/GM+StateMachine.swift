@@ -433,8 +433,8 @@ extension GameManager {
             logger.log("Dealing cards")
             
         case .choosingTrump:
-            // If trump chosen, I chose a bid
-            if gameState.trumpSuit != nil {
+            // If trump chosen or my place is first, I have to bet
+            if gameState.trumpSuit != nil || gameState.localPlayer?.place == 1 {
                 transition(to: .bidding)
             } else {
                 transition(to: .choosingTrump)

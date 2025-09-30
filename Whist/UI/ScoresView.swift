@@ -385,13 +385,12 @@ struct DetailedScoresView: View {
                         ForEach(days, id: \.self) { day in
                             let dayScores = byDay[day]!.sorted { $0.date < $1.date }
 
-                            ForEach(dayScores.indices, id: \.self) { idx in
-                                let score = dayScores[idx]
+                            ForEach(dayScores) { score in
                                 let pts = calculateGamePoints(for: score)
 
                                 HStack {
                                     // Show day number only once
-                                    if idx == 0 {
+                                    if score.id == dayScores.first?.id {
                                         Text("\(day)").frame(width: 40, alignment: .leading)
                                     } else {
                                         Text("").frame(width: 40)
@@ -410,7 +409,6 @@ struct DetailedScoresView: View {
                                         .foregroundColor(colorForPoints(pts.toto))
                                 }
                                 .listRowSeparator(.hidden)
-
                             }
 
                             Divider()

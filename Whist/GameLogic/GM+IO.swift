@@ -118,10 +118,7 @@ extension GameManager {
             
         case .cancelTrump:
             logger.log("Received cancellation of trump suit")
-            // Do something only if last
-            if gameState.localPlayer?.place == 3 {
-                self.updateGameStateWithTrumpCancellation()
-            }
+            self.updateGameStateWithTrumpCancellation()
             
         case .discard:
             logger.log("Received discard")

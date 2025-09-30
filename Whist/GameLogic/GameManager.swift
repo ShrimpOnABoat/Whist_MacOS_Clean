@@ -32,7 +32,6 @@ enum PlayerId: String, Codable, CaseIterable {
 class GameManager: ObservableObject {
     @Published var gameState: GameState = GameState()
     @Published var showOptions: Bool = false
-    @Published var showTrumps: Bool = false
     @Published var showLastTrick: Bool = false
     @Published var movingCards: [MovingCard] = []
     @Published var hoveredSuit: Suit? = nil
@@ -503,6 +502,20 @@ class GameManager: ObservableObject {
         
         // Put the card face up if second player
         if gameState.localPlayer?.place == 2 {
+            removedCard.isFaceDown = false
+        }
+        
+        // Put the card face up if first player betting randomly
+        // Calculate scores
+        let scores = gameState.players.map { $0.scores.last ?? 0 }.sorted(by: >)
+        let playerScore = gameState.localPlayer?.scores.last ?? 0
+        let bestScore = scores.first ?? 0
+        let secondBestScore = scores.dropFirst().first ?? 0
+        
+        if (playerScore >= 2 * secondBestScore &&
+            playerScore != secondBestScore && // in case the 2 best players have 0
+            gameState.round > 3 &&
+            playerScore == bestScore) {
             removedCard.isFaceDown = false
         }
         
