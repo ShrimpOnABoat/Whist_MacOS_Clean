@@ -813,17 +813,19 @@ class GameManager: ObservableObject {
         // Sort all actions by sequence (ascending)
         let sortedActions = actions.sorted { $0.sequence < $1.sequence }
 
-        // Pick the latest playOrder and dealer actions to establish authoritative state first
+        // Pick the latest playOrder, dealer, and startNewGame actions to establish authoritative state first
         let latestPlayOrder = sortedActions.last { $0.type == .playOrder }
         let latestDealer = sortedActions.last { $0.type == .dealer }
+        let latestStartNewGame = sortedActions.last { $0.type == .startNewGame }
 
         // Priority actions to run first (order between them doesn't matter)
         var priorityActions: [GameAction] = []
         if let po = latestPlayOrder { priorityActions.append(po) }
         if let dl = latestDealer { priorityActions.append(dl) }
+        if let sng = latestStartNewGame { priorityActions.append(sng) }
 
-        // Remaining actions exclude all dealer/playOrder (we've established the final ones above)
-        let remaining = sortedActions.filter { $0.type != .dealer && $0.type != .playOrder }
+        // Remaining actions exclude all dealer/playOrder/startNewGame (we've established the final ones above)
+        let remaining = sortedActions.filter { $0.type != .dealer && $0.type != .playOrder && $0.type != .startNewGame }
 
         // From the remaining actions, remove all sendState except the latest per player
         var latestSendStateByPlayer: [PlayerId: GameAction] = [:]
@@ -836,6 +838,12 @@ class GameManager: ObservableObject {
 
         // Final ordered list: priority actions first, then the rest in sequence order
         let filteredActions: [GameAction] = priorityActions + tailActions
+
+        // Diagnostics: if multiple startNewGame exist, log and indicate which one kept
+        let startNewGameCount = sortedActions.filter { $0.type == .startNewGame }.count
+        if startNewGameCount > 1, let kept = latestStartNewGame {
+            logger.log("Multiple startNewGame actions found (\(startNewGameCount)). Keeping only the latest at seq \(kept.sequence) from \(kept.playerId).")
+        }
 
         // For logging (round counting is only for sendDeck in the tail and remains accurate)
         var actionsProcessed: Int = 0
@@ -852,7 +860,7 @@ class GameManager: ObservableObject {
                 logger.log("[\(String(format: "%04d", action.sequence))] \(action.playerId.rawValue) - \(action.type)(\(actionPayloadString(action)))")
             }
         }
-        logger.log("Filtered to \(filteredActions.count) actions after prioritizing playOrder/dealer and pruning redundant sendState actions.")
+        logger.log("Filtered to \(filteredActions.count) actions after prioritizing playOrder/dealer/startNewGame and pruning redundant sendState actions.")
 
         // Replay each action through your existing handler
         isRestoring = true
