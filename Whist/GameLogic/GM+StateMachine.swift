@@ -157,6 +157,18 @@ extension GameManager {
             setPlayerState(to: .idle)
             // remove cards from tricks, hands and table and bring them back to the deck
             waitForAnimationsToFinish {
+                // If a new deck is already available or about to be processed, skip cleanup to avoid races with dealing
+                let hasPendingSendDeck = self.pendingActions.contains { $0.type == .sendDeck }
+                if self.isDeckReady || self.isDeckReceived || hasPendingSendDeck {
+                    if hasPendingSendDeck {
+                        logger.log("Skipping gatherCards in waitingForDeck because a pending sendDeck exists.")
+                    } else {
+                        logger.log("Skipping gatherCards in waitingForDeck because deck is already ready/received.")
+                    }
+                    if !self.isDeckReady { logger.log("Waiting for deck") }
+                    return
+                }
+                
                 self.gatherCards() {
                     // in case the deck was sent earlier
                     //                    self.processPendingActionsForCurrentPhase()
@@ -773,3 +785,4 @@ extension GameManager {
         slowpokeTimer = timer
     }
 }
+
