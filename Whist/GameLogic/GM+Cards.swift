@@ -235,10 +235,12 @@ extension GameManager {
                     if cardsPerPlayer.values.allSatisfy({ $0 == 0 }) {
                         // Determine the trump card if applicable
                         if self.gameState.round <= 3 || self.allScoresEqual() {
-                            if let trumpCard = self.gameState.deck.last {
+                            if let trumpCard = self.gameState.deck.last,
+                               let trumpTwo = self.gameState.trumpCards.last {
                                 self.gameState.trumpSuit = trumpCard.suit
                                 withAnimation(.smooth(duration: 0.5)) {
                                     trumpCard.isFaceDown = false
+                                    trumpTwo.isFaceDown = true
                                     logger.log("Showing the trump card \(trumpCard)")
                                 }
                             } else {
