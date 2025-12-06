@@ -903,4 +903,78 @@ class GameManager: ObservableObject {
             logger.log("Stored action \(action.type) from \(action.playerId) for later because currentPhase = \(self.gameState.currentPhase)")
         }
     }
+    
+    func resetStateAndRestoreGame() {
+        logger.log("⚠️ Resetting game state and restoring from actions (P2P connections preserved).")
+        
+        // 1) Snapshot transient UI state per player before replacing gameState
+        let snapshot: [PlayerId: (connectionPhase: P2PConnectionPhase, firebaseOnline: Bool, state: PlayerState)] =
+            Dictionary(uniqueKeysWithValues: gameState.players.map { player in
+                (player.id, (player.connectionPhase, player.firebasePresenceOnline, player.state))
+            })
+        
+        // 2) Reinitialize game state (but not connection/signaling managers)
+        self.gameState = GameState()
+        self.pendingActions.removeAll()
+        self.activeAnimations = 0
+        self.onBatchAnimationsCompleted.removeAll()
+        self.animationQueue.removeAll()
+        self.cardStates.removeAll()
+        self.isShuffling = false
+        self.isDeckReady = false
+        self.isDeckReceived = false
+        self.buffered.removeAll()
+        self.lastAppliedSequence = 0
+        self.catchUpWorkItem?.cancel()
+        self.catchUpWorkItem = nil
+        self.canCatchUp = false
+        self.isRestoring = false
+        self.restorationProgress = 0.0
+        self.isAwaitingActionCompletionDuringRestore = false
+        self.showConfetti = false
+        self.showWindSwirl = false
+        self.showFailureEffect = false
+        self.cameraShakeOffset = .zero
+        self.showImpactEffect = false
+        self.showSubtleFailureEffect = false
+        self.effectPosition = .zero
+        self.dealerPosition = .zero
+        self.playersScoresUpdated = false
+        self.isFirstGame = true
+        self.slowpokeTimer?.cancel()
+        self.slowpokeTimer = nil
+        self.amSlowPoke = false
+        self.isSlowPoke = [:]
+        self.amHonked = false
+        self.autoPilot = false
+        self.lastGameWinner = nil
+        self.isGameSetup = false
+
+        // Bootstrap: Identify local player immediately so updatePlayerReferences works.
+        if let localId = PlayerId(rawValue: preferences.playerId),
+           let player = self.gameState.players.first(where: { $0.id == localId }) {
+            player.tablePosition = .local
+            // Temporarily set playOrder so updatePlayerReferences works if called early
+            self.gameState.playOrder = [localId] + PlayerId.allCases.filter { $0 != localId }
+            self.gameState.updatePlayerReferences()
+        }
+        
+        // 3) Reapply the snapshot to new Player instances
+        for p in gameState.players {
+            if let saved = snapshot[p.id] {
+                p.connectionPhase = saved.connectionPhase
+                p.firebasePresenceOnline = saved.firebaseOnline
+                p.state = saved.state
+            }
+        }
+        // Publish so avatars recolor immediately
+        self.objectWillChange.send()
+        
+        // 4) Proceed with restore
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.restoreGameFromActions()
+        }
+    }
 }
+

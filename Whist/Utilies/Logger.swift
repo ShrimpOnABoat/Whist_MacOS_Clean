@@ -130,6 +130,6 @@ class SimpleLogger {
     }
 }
     
-    // Global logger for easy access
-    let logger = SimpleLogger.shared
-    
+// Global logger for easy access
+let logger = SimpleLogger.shared
+

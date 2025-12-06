@@ -405,9 +405,10 @@ struct NetworkMenuCommands: Commands {
     var body: some Commands {
         CommandMenu("Network") {
             Button("Rattraper les actions manquées") {
-                gameManager.scheduleCatchUp(reason: "Manual trigger via menu")
+//                gameManager.scheduleCatchUp(reason: "Manual trigger via menu")
+                gameManager.resetStateAndRestoreGame()
             }
-            .keyboardShortcut("k", modifiers: [.command, .shift])
+            .keyboardShortcut("r", modifiers: [.command, .shift])
             .help("Trigger a manual catch-up of missed actions")
         }
     }
