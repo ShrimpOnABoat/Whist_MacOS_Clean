@@ -16,18 +16,29 @@ class PresenceManager: ObservableObject {
     private var connectedRef: DatabaseReference? // For .info/connected
     private var userStatusRef: DatabaseReference? // For status/<playerId>
     private var localPlayerId: String? // Store the local player's ID
-
+    
     private var peerStatusListeners: [String: DatabaseHandle] = [:] // To keep track of listeners
     // Callback to inform GameManager
     var onPeerPresenceChanged: ((_ peerId: PlayerId, _ isOnline: Bool) -> Void)?
+    
+    // 1. Add a property to store the current session ID
+    public let currentSessionId = UUID().uuidString
+    // 2. Keep track of peers' session IDs to detect restarts
+    private var peerSessionIds: [PlayerId: String] = [:]
+    
     private init() {}
-
+    
+    // 3. Helper to get a peer's session ID
+    func getSessionId(for peerId: PlayerId) -> String? {
+        return peerSessionIds[peerId]
+    }
+    
     func configure(with playerId: String) {
         self.localPlayerId = playerId
         self.databaseRef = Database.database().reference()
         self.connectedRef = databaseRef?.child(".info/connected")
         self.userStatusRef = databaseRef?.child("status/\(playerId)")
-     
+        
         // Monitor connection state to Firebase
         connectedRef?.observe(.value) { [weak self] snapshot in
             guard let self = self, let connected = snapshot.value as? Bool, connected else {
@@ -36,35 +47,39 @@ class PresenceManager: ObservableObject {
                 // but onDisconnect should primarily handle this.
                 return
             }
-
+            
             logger.log("[Presence] Connected to Firebase Realtime Database. Setting presence for \(playerId).")
-
+            
             // Data to write when connected
             let presenceData: [String: Any] = [
                 "online": true,
-                "last_seen": ServerValue.timestamp() // Use server timestamp
+                "last_seen": ServerValue.timestamp(),
+                "sessionId": self.currentSessionId
             ]
-
-            // Set current status to online
-            self.userStatusRef?.setValue(presenceData) { error, _ in
-                if let error = error {
-                    logger.log("[Presence] Error setting user online: \(error.localizedDescription)")
-                } else {
-                    logger.log("[Presence] User \(playerId) set to ONLINE.")
-                }
-            }
-
-            // Set up onDisconnect to mark user as offline
-            self.userStatusRef?.onDisconnectUpdateChildValues([
-                "online": false,
-                "last_seen": ServerValue.timestamp()
-            ]) { error, _ in
-                if let error = error {
-                    logger.log("[Presence] Error setting onDisconnect: \(error.localizedDescription)")
-                } else {
-                    logger.log("[Presence] onDisconnect handler set for \(playerId).")
-                }
-            }
+            
+            self.userStatusRef?.setValue(presenceData)
+            self.userStatusRef?.onDisconnectUpdateChildValues(["online": false])
+            
+            //            // Set current status to online
+            //            self.userStatusRef?.setValue(presenceData) { error, _ in
+            //                if let error = error {
+            //                    logger.log("[Presence] Error setting user online: \(error.localizedDescription)")
+            //                } else {
+            //                    logger.log("[Presence] User \(playerId) set to ONLINE.")
+            //                }
+            //            }
+            //
+            //            // Set up onDisconnect to mark user as offline
+            //            self.userStatusRef?.onDisconnectUpdateChildValues([
+            //                "online": false,
+            //                "last_seen": ServerValue.timestamp()
+            //            ]) { error, _ in
+            //                if let error = error {
+            //                    logger.log("[Presence] Error setting onDisconnect: \(error.localizedDescription)")
+            //                } else {
+            //                    logger.log("[Presence] onDisconnect handler set for \(playerId).")
+            //                }
+            //            }
         }
     }
     
@@ -75,7 +90,7 @@ class PresenceManager: ObservableObject {
         }
         
         logger.log("[Presence] Starting to monitor peers: \(peerIds.map { $0.rawValue }.joined(separator: ", ")) excluding self (\(localPlayerId.rawValue))")
-
+        
         for peerId in peerIds {
             if peerId == localPlayerId { continue } // Don't monitor self
             
@@ -85,15 +100,39 @@ class PresenceManager: ObservableObject {
             if let existingHandle = peerStatusListeners[peerId.rawValue] {
                 peerStatusRef.removeObserver(withHandle: existingHandle)
                 logger.log("[Presence] Removed existing listener for \(peerId.rawValue).")
-    }
+            }
             
-            let handle = peerStatusRef.observe(.value) { [weak self] snapshot in
+            let handle = peerStatusRef.observe(.value) { [weak self] snapshot, _ in
                 guard let self = self else { return }
                 var isOnline = false
-                if let value = snapshot.value as? [String: Any],
-                   let onlineStatus = value["online"] as? Bool {
-                    isOnline = onlineStatus
+                var remoteSessionId: String? = nil
+                
+                if let value = snapshot.value as? [String: Any] {
+                    if let onlineStatus = value["online"] as? Bool {
+                        isOnline = onlineStatus
+                    }
+                    if let sid = value["sessionId"] as? String {
+                        remoteSessionId = sid
+                    }
                 }
+                
+                // CHECK FOR SESSION CHANGE
+                let lastKnownSessionId = self.peerSessionIds[peerId]
+                
+                // Update stored session ID
+                if let newSid = remoteSessionId {
+                    self.peerSessionIds[peerId] = newSid
+                }
+                
+                // If they are online, but the session ID changed, it's a restart.
+                // We simulate an "Offline" event first to force cleanup in GameManager.
+                if isOnline, let newSid = remoteSessionId, let oldSid = lastKnownSessionId, newSid != oldSid {
+                    logger.log("[Presence] Peer \(peerId.rawValue) changed Session ID (Restart detected). Forcing disconnect cleanup.")
+                    DispatchQueue.main.async {
+                        self.onPeerPresenceChanged?(peerId, false)
+                    }
+                }
+                
                 logger.log("[Presence] Peer \(peerId.rawValue) is now \(isOnline ? "ONLINE" : "OFFLINE").")
                 DispatchQueue.main.async { [weak self] in
                     self?.onPeerPresenceChanged?(peerId, isOnline)
@@ -105,19 +144,19 @@ class PresenceManager: ObservableObject {
     }
     
     func goOfflineManually() {
-         guard let userStatusRef = userStatusRef, let playerId = self.localPlayerId else { return }
-         logger.log("[Presence] Setting user \(playerId) to OFFLINE manually.")
-         userStatusRef.updateChildValues([
-             "online": false,
-             "last_seen": ServerValue.timestamp()
-         ])
-         // Important: Cancel the onDisconnect operations since we are manually going offline.
-         // Otherwise, if the app quits right after this, onDisconnect might overwrite it.
-         // However, for simplicity and most app lifecycle, just setting to false might be enough.
-         // For full control, you'd cancel onDisconnects:
-         // userStatusRef.cancelDisconnectOperations()
-     }
-
+        guard let userStatusRef = userStatusRef, let playerId = self.localPlayerId else { return }
+        logger.log("[Presence] Setting user \(playerId) to OFFLINE manually.")
+        userStatusRef.updateChildValues([
+            "online": false,
+            "last_seen": ServerValue.timestamp()
+        ])
+        // Important: Cancel the onDisconnect operations since we are manually going offline.
+        // Otherwise, if the app quits right after this, onDisconnect might overwrite it.
+        // However, for simplicity and most app lifecycle, just setting to false might be enough.
+        // For full control, you'd cancel onDisconnects:
+        // userStatusRef.cancelDisconnectOperations()
+    }
+    
     func stopMonitoringPeerPresence() {
         guard let dbRef = databaseRef else { return }
         for (peerIdString, handle) in peerStatusListeners {
