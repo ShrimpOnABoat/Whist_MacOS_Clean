@@ -465,9 +465,9 @@ class GameManager: ObservableObject {
         logger.log("Player \(playerId) announced tricks: \(player.announcedTricks)")
 
         // if all players have bet and I'm placed 1, show the trump card if there's no 3-tie OR if local player score >= 2 * second player score
-        let shouldRevealTrump = (
+        let shouldRevealTrump =
+            gameState.round > 3 && ((
             allPlayersBet() &&
-            gameState.round > 3 &&
             gameState.playerPlaced(1)?.scores.last != gameState.playerPlaced(3)?.scores.last
         ) || ({ // Use a closure to safely unwrap and compare scores
             guard let localScore = gameState.localPlayer?.scores.last, // Safely get local player's last score
@@ -477,7 +477,7 @@ class GameManager: ObservableObject {
             }
             // Now perform the comparison with unwrapped values
             return localScore >= 2 * secondScore
-        })() // Immediately execute the closure
+        })()) // Immediately execute the closure
 
         if shouldRevealTrump {
             gameState.trumpCards.last?.isFaceDown = false
