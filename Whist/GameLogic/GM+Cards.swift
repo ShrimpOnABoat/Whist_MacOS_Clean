@@ -595,11 +595,54 @@ extension GameManager {
         
         if !gameState.table.indices.contains(localIndex) {
             // Filter playable cards
-            let playableCards = localPlayer.hand.filter { $0.isPlayable }
+            var playableCards = localPlayer.hand.filter { $0.isPlayable }
             
-            // Ensure there are playable cards
-            guard !playableCards.isEmpty else {
-                logger.fatalErrorAndLog("Error: No playable cards available.")
+            // If none are playable, try to recover by recomputing playability after animations settle.
+            if playableCards.isEmpty {
+                // If the hand is empty, nothing to play; just return safely.
+                if localPlayer.hand.isEmpty {
+                    logger.log("AI: No cards in hand to play. Returning without action.")
+                    completion()
+                    return
+                }
+                
+                logger.log("AI: No playable cards flagged. Waiting for animations, recomputing playability, and retrying once.")
+                waitForAnimationsToFinish { [weak self] in
+                    guard let self = self else { return }
+                    // Recompute playability based on the current lead
+                    self.setPlayableCards()
+                    playableCards = localPlayer.hand.filter { $0.isPlayable }
+                    
+                    // If still empty, fall back to computing legal moves directly from rules
+                    if playableCards.isEmpty {
+                        let leadingSuit = self.gameState.table.first?.suit
+                        if let lead = leadingSuit, localPlayer.hand.contains(where: { $0.suit == lead }) {
+                            playableCards = localPlayer.hand.filter { $0.suit == lead }
+                        } else {
+                            playableCards = localPlayer.hand
+                        }
+                        
+                        if playableCards.isEmpty {
+                            // This should never happen, but avoid crashing.
+                            logger.log("AI: Still no card available after recompute. Returning without action.")
+                            completion()
+                            return
+                        }
+                    }
+                    
+                    // Proceed to pick and play
+                    if let selectedCard = playableCards.randomElement() {
+                        logger.log("AI (retry) is playing card: \(selectedCard)")
+                        self.playCard(selectedCard) {
+                            logger.log("AI (retry) played card \(selectedCard)")
+                            completion()
+                        }
+                    } else {
+                        logger.log("AI: Failed to select a card after retry. Returning without action.")
+                        completion()
+                    }
+                }
+                return
             }
             
             // Select a random playable card
@@ -612,6 +655,10 @@ extension GameManager {
                     //                    self.checkAndAdvanceStateIfNeeded()
                     completion()
                 }
+            } else {
+                // Shouldn't happen given the earlier guard, but keep safe path
+                logger.log("AI: Could not select a playable card even though list is non-empty. Returning.")
+                completion()
             }
         }
     }
@@ -711,3 +758,4 @@ extension GameManager {
         }
     }
 }
+

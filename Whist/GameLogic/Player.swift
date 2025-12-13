@@ -71,6 +71,9 @@ class Player: Identifiable, ObservableObject, Codable {
             logger.debug("🏀🏀🏀 \(id)'s connection phase is now \(connectionPhase)")
         }
     }
+    // Transient: the sessionId of the *peer process* we are currently connected to.
+    // Not Codable (it should reset naturally on app restart).
+    @Published var connectedSessionId: String? = nil
     @Published var place: Int = -1 // Player's rank (1, 2, or 3)
     @Published var hand: [Card] = []
     @Published var trickCards: [Card] = []

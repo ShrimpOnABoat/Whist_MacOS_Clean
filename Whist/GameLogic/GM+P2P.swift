@@ -69,10 +69,8 @@ extension GameManager {
             signalingManager.validateSession = { [weak self] (peerId, incomingSessionId) in
                 guard self != nil else { return false }
                 guard let expectedSessionId = PresenceManager.shared.getSessionId(for: peerId) else {
-                    // If we don't know their session yet, we probably shouldn't accept signal.
-                    // Or we could be lenient. Stricter is better for your bug.
-                    logger.log("⚠️ Validating Session for \(peerId): Unknown expected session. Rejecting.")
-                    return false
+                    logger.log("⚠️ Validating Session for \(peerId): Unknown expected session. Allowing (will be reconciled by presence).")
+                    return true
                 }
                 guard let incoming = incomingSessionId else {
                     logger.log("⚠️ Validating Session for \(peerId): Incoming signal has no session ID. Rejecting.")
@@ -372,6 +370,21 @@ extension GameManager {
             cancelIceDisconnectionTimer(for: playerId)
             gameState.players[playerIndex].connectionPhase = phase
             logger.logRTC("Player \(playerId) phase -> \(phase.rawValue)")
+
+            let player = gameState.players[playerIndex]
+
+            if phase == .idle || phase == .disconnected || phase == .failed {
+                if player.connectedSessionId != nil {
+                    logger.logRTC("Clearing connectedSessionId for \(playerId.rawValue)")
+                }
+                player.connectedSessionId = nil
+            }
+
+            if phase == .connected {
+                let sid = PresenceManager.shared.getSessionId(for: playerId)
+                player.connectedSessionId = sid
+                logger.logRTC("Connected to \(playerId.rawValue) sessionId=\(sid ?? "nil")")
+            }
             
             // Start new timer based on phase
             switch phase {
@@ -680,6 +693,25 @@ extension GameManager {
         player.firebasePresenceOnline = isOnline
         
         if isOnline {
+            let expectedSid = PresenceManager.shared.getSessionId(for: peerId)
+            let connectedSid = player.connectedSessionId
+
+            // If we think we're connected to this peer, but presence says they restarted (session changed),
+            // force a teardown + reconnect even if our currentPhase isn't idle/disconnected.
+            if player.isP2PConnected,
+               let connectedSid,
+               let expectedSid,
+               connectedSid != expectedSid {
+                logger.logRTC("⚠️ Peer \(peerId.rawValue) restarted (sid \(connectedSid) -> \(expectedSid)). Forcing reset.")
+                cancelConnectionTimer(for: peerId)
+                cancelIceDisconnectionTimer(for: peerId)
+                connectionManager.closeConnection(for: peerId)
+                updatePlayerConnectionPhase(playerId: peerId, phase: .disconnected)
+                attemptP2PConnection(with: peerId)
+                displayPlayers()
+                return
+            }
+            
             // Peer came online or is confirmed online.
             // Only attempt connection if currently idle, failed, or disconnected from P2P.
             let currentPhase = player.connectionPhase
