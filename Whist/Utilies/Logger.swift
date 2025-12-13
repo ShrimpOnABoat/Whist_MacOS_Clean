@@ -6,6 +6,35 @@
 //  Logging utility for debugging.
 
 import Foundation
+import AppKit
+
+enum CrashPopup {
+
+    static func show(_ text: String, onOK: @escaping () -> Void) {
+        // Always present from the main thread. Use an app-modal NSAlert (runModal) because it
+        // reliably stays responsive even when invoked from error paths.
+        let present: () -> Void = {
+            NSApp.activate(ignoringOtherApps: true)
+
+            let alert = NSAlert()
+            alert.messageText = "Crash détecté"
+            alert.informativeText = text
+            alert.addButton(withTitle: "OK")
+            alert.alertStyle = .critical
+
+            _ = alert.runModal()
+            onOK()
+        }
+
+        if Thread.isMainThread {
+            present()
+        } else {
+            DispatchQueue.main.async {
+                present()
+            }
+        }
+    }
+}
 
 /// A simple logger that writes to console and file with timestamps and function information.
 class SimpleLogger {
@@ -109,7 +138,25 @@ class SimpleLogger {
     
     func fatalErrorAndLog(_ message: String, function: String = #function) -> Never {
         log(message, function: function)
-        fatalError(message)
+
+        let popupText = "\(message)"
+
+        // Show a responsive modal alert, then crash deliberately after the user acknowledges.
+        CrashPopup.show(popupText) {
+            fatalError(message)
+        }
+
+        // Satisfy `-> Never` without blocking the main thread:
+        if Thread.isMainThread {
+            // We already showed the alert synchronously; fatalError will run from the OK handler.
+            // If something went wrong and we get here, crash as a fallback.
+            fatalError(message)
+        } else {
+            // Keep this background thread alive; the process will terminate when fatalError runs on main.
+            while true {
+                RunLoop.current.run(mode: .default, before: .distantFuture)
+            }
+        }
     }
     
     /// Returns the content of the current log file
@@ -132,4 +179,3 @@ class SimpleLogger {
     
 // Global logger for easy access
 let logger = SimpleLogger.shared
-
