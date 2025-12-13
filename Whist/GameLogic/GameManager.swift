@@ -322,7 +322,13 @@ class GameManager: ObservableObject {
         let currentScores = gameState.players.map { $0.scores.last ?? 0 }
         let highestScore = currentScores.max() ?? 0
         let lowestScore = currentScores.min() ?? 0
-        if currentRound < 12 {
+
+        let isFinalRankingPhase =
+            (currentRound == 12) &&
+            (gameState.currentPhase == .scoring || gameState.currentPhase == .gameOver)
+        
+        if !isFinalRankingPhase {
+//        if currentRound < 12 {
         
             // Step 1: Player has the highest score
             if player.scores.last == highestScore {
