@@ -129,8 +129,6 @@ struct ScoreBoardView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .background(betsColor(for: gameManager))
-            .cornerRadius(5)
         }
         .padding()
         .background(Color.white.opacity(0.5))
@@ -138,34 +136,43 @@ struct ScoreBoardView: View {
         .shadow(radius: 5)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white, lineWidth: 2)
+                .stroke(scoreboardBorderColor(for: gameManager), lineWidth: 2)
         )
     }
     
-    func betsColor(for gameManager: GameManager) -> Color {
+    private func scoreboardBorderColor(for gameManager: GameManager) -> Color {
+        // Default neutral border
         let round = gameManager.gameState.round
-        
-        if round < 4 || !gameManager.allPlayersBet() {
-            return Color.white.opacity(0)
+        guard round >= 4 && gameManager.allPlayersBet() else {
+            return Color.white
         }
         
-        let tricksSum = gameManager.gameState.players.reduce(0) { sum, player in
-            sum + (player.announcedTricks.count >= round ? player.announcedTricks[round - 1] : 0)
+        let diff = betsDiff(for: gameManager)
+        if diff == 0 {
+            return Color.white
         }
-        let targetTricks = max(round - 2, 1)
-
-        // Dynamic red or blue color based on the difference
-        let difference = CGFloat(abs(tricksSum - targetTricks))
-
-        if tricksSum > targetTricks {
-            // Red for sum greater than target
-            return Color.red.opacity(difference * 0.2)
-        } else {
-            // Blue for sum less than target
-            return Color.blue.opacity(difference * 0.2)
-        }
+        
+        // Slightly stronger border for readability
+        return (diff < 0 ? Color.blue : Color.red).opacity(0.85)
     }
     
+    private func totalBetsThisRound(for gameManager: GameManager) -> Int {
+        let round = gameManager.gameState.round
+        return gameManager.gameState.players.reduce(0) { sum, player in
+            sum + (player.announcedTricks.count >= round ? player.announcedTricks[round - 1] : 0)
+        }
+    }
+
+    private func targetCardsThisRound(for gameManager: GameManager) -> Int {
+        let round = gameManager.gameState.round
+        // In rounds 4+, target cards per player is (round - 2). Clamp at 1 for safety.
+        return max(round - 2, 1)
+    }
+
+    private func betsDiff(for gameManager: GameManager) -> Int {
+        totalBetsThisRound(for: gameManager) - targetCardsThisRound(for: gameManager)
+    }
+
     func determineRoundModifiers() -> [PlayerId: Int] {
         // Calculate the number of cards to deal to each player
         // or if first player has to bet randomly
