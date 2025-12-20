@@ -291,9 +291,63 @@ class ScoresManager {
                 return
             }
 
-            logger.log("📊 Loaded \(scores.count) scores for export. Grouping by year...")
+            // Normalize scores: compute missing positions only when not already present
+            let normalizedScores: [GameScore] = scores.map { score in
+                // If all positions already exist, return as-is
+                if score.ggPosition != nil && score.ddPosition != nil && score.totoPosition != nil {
+                    return score
+                }
 
-            let groupedByYear = Dictionary(grouping: scores) { score in
+                // Determine rankings based on scores with tie handling
+                let entries: [(key: String, value: Int)] = [
+                    ("gg", score.ggScore),
+                    ("dd", score.ddScore),
+                    ("toto", score.totoScore)
+                ]
+
+                // Sort descending by score
+                let sorted = entries.sorted { $0.value > $1.value }
+
+                // Compute positions with ties: equal scores share the same position
+                var positionByKey: [String: Int] = [:]
+                var currentPosition = 1
+                var lastScore: Int? = nil
+                var itemsAtCurrentRank = 0
+
+                for (index, item) in sorted.enumerated() {
+                    if let last = lastScore, item.value == last {
+                        // same score as previous -> same position
+                        positionByKey[item.key] = currentPosition
+                        itemsAtCurrentRank += 1
+                    } else {
+                        // new score bucket -> advance position by number of items in previous bucket
+                        if index != 0 {
+                            currentPosition += itemsAtCurrentRank
+                        }
+                        positionByKey[item.key] = currentPosition
+                        lastScore = item.value
+                        itemsAtCurrentRank = 1
+                    }
+                }
+
+                // Only fill positions that are currently nil, keep existing ones intact
+                return GameScore(
+                    date: score.date,
+                    ggScore: score.ggScore,
+                    ddScore: score.ddScore,
+                    totoScore: score.totoScore,
+                    ggPosition: score.ggPosition ?? positionByKey["gg"],
+                    ddPosition: score.ddPosition ?? positionByKey["dd"],
+                    totoPosition: score.totoPosition ?? positionByKey["toto"],
+                    ggConsecutiveWins: score.ggConsecutiveWins,
+                    ddConsecutiveWins: score.ddConsecutiveWins,
+                    totoConsecutiveWins: score.totoConsecutiveWins
+                )
+            }
+
+            logger.log("📊 Loaded \(scores.count) scores for export. Normalized missing positions. Grouping by year...")
+
+            let groupedByYear = Dictionary(grouping: normalizedScores) { score in
                 Calendar.current.component(.year, from: score.date)
             }.mapValues { yearlyScores in
                 yearlyScores.sorted { $0.date < $1.date }
@@ -331,3 +385,4 @@ class ScoresManager {
         }
     }
 }
+
