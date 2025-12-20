@@ -17,20 +17,26 @@ struct ScoresView: View {
         VStack {
             // Year selection controls
             HStack {
-                Button(action: { selectedYear -= 1 }) {
+                Button {
+                    if selectedYear > firstYear {
+                        selectedYear -= 1
+                    }
+                } label: {
                     Image(systemName: "chevron.left")
                 }
-                .buttonStyle(BorderlessButtonStyle())
+                .disabled(selectedYear <= firstYear)
 
                 Text(String(selectedYear))
                     .font(.title)
-                    .bold()
-                    .foregroundColor(.primary)
 
-                Button(action: { selectedYear += 1 }) {
+                Button {
+                    if selectedYear < currentYear {
+                        selectedYear += 1
+                    }
+                } label: {
                     Image(systemName: "chevron.right")
                 }
-                .buttonStyle(BorderlessButtonStyle())
+                .disabled(selectedYear >= currentYear)
             }
             .padding()
 
@@ -45,6 +51,7 @@ struct ScoresView: View {
             // Display content based on the selected tab
             if selectedTab == .summary {
                 SummaryView(year: selectedYear)
+                    .environmentObject(gameManager)
                     .id(selectedYear)
             } else {
                 DetailedScoresView(year: selectedYear)
@@ -77,6 +84,7 @@ struct MonthlySummary: Identifiable {
 }
 
 struct SummaryView: View {
+    @EnvironmentObject var gameManager: GameManager
     let year: Int
     @State private var monthlySummaries: [MonthlySummary] = []
 
@@ -93,14 +101,105 @@ struct SummaryView: View {
         }
         return total
     }
+    
+    private var currentYear: Int {
+        Calendar.current.component(.year, from: Date())
+    }
+
+    // Decide yearly ranking.
+    // Primary: yearly tallies; Secondary: total points (tie-breaker).
+    private func podiumOrder() -> [PlayerId] {
+        let candidates: [(id: PlayerId, tally: Int, points: Int)] = [
+            (.gg, total.ggTally, total.gg),
+            (.dd, total.ddTally, total.dd),
+            (.toto, total.totoTally, total.toto)
+        ]
+
+        return candidates
+            .sorted {
+                if $0.tally != $1.tally { return $0.tally > $1.tally }
+                if $0.points != $1.points { return $0.points > $1.points }
+                return String(describing: $0.id) < String(describing: $1.id)
+            }
+            .map { $0.id }
+    }
+
+    private func backgroundColor(for id: PlayerId) -> Color {
+        switch id {
+        case .dd: return .yellow
+        case .gg: return .blue
+        case .toto: return .green
+        }
+    }
+
+    private func avatarView(for id: PlayerId, size: CGFloat) -> some View {
+        let p = gameManager.gameState.getPlayer(by: id)
+        
+        return VStack(spacing: 6) {
+            ZStack {
+                (p.imageBackgroundColor ?? Color.gray)
+                (p.image ?? Image(systemName: "person.crop.circle"))
+                    .resizable()
+                    .scaledToFit()
+            }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+        }
+    }
+
+
+    @ViewBuilder
+    private func annualPodiumHeader() -> some View {
+        if year == currentYear {
+            EmptyView() // hide for current year
+        } else {
+            let order = podiumOrder()
+            if order.count != 3 {
+                EmptyView()
+            } else {
+                ZStack {
+                    Image("palmares annuel")
+                        .resizable()
+                        .scaledToFit()
+                        .overlay(alignment: .topLeading) {
+                            GeometryReader { geo in
+                                let rect = aspectFitRect(container: geo.size, imageSize: palmaresSize)
+
+                                // Your “relative to image” coordinates:
+                                let winnerX = rect.minX + rect.width  * 0.50
+                                let winnerY = rect.minY + rect.height * 0.36 // 0.35 // 0.38
+
+                                let leftX   = rect.minX + rect.width  * 0.28
+                                let rightX  = rect.minX + rect.width  * 0.72
+                                let othersY = rect.minY + rect.height * 0.63 // 0.64 // 0.65 // 0.63 // 0.60 // 0.78
+
+                                let winnerSize = min(rect.width, rect.height) * 0.35 // 0.34
+                                let otherSize  = min(rect.width, rect.height) * 0.28 // 0.29 // 0.26
+
+                                avatarView(for: order[0], size: winnerSize)
+                                    .position(x: winnerX, y: winnerY)
+
+                                avatarView(for: order[1], size: otherSize)
+                                    .position(x: leftX, y: othersY)
+
+                                avatarView(for: order[2], size: otherSize)
+                                    .position(x: rightX, y: othersY)
+                            }
+                        }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 12)
+            }
+        }
+    }
 
     var body: some View {
+        annualPodiumHeader()
+            .scaleEffect(1.2)
         VStack(alignment: .leading) {
-//            Text("Scores pour \(String(year))")
-//                .font(.headline)
-//                .foregroundColor(.primary)
-//                .padding(.bottom, 5)
-//
             // Table header row
             HStack {
                 Text("Mois").frame(width: 100, alignment: .leading).foregroundColor(.secondary)
@@ -484,11 +583,27 @@ let dayFormatter: DateFormatter = {
     return f
 }()
 
-// MARK: - Preview
+private func aspectFitRect(container: CGSize, imageSize: CGSize) -> CGRect {
+    guard container.width > 0, container.height > 0, imageSize.width > 0, imageSize.height > 0 else {
+        return .zero
+    }
 
-//struct ScoresView_Previews: PreviewProvider {
-//    static var previews: some View {
-//        ScoresView()
-//            .environmentObject(GameManager())
-//    }
-//}
+    let scale = min(container.width / imageSize.width, container.height / imageSize.height)
+    let fitted = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+
+    let origin = CGPoint(
+        x: (container.width  - fitted.width)  / 2,
+        y: (container.height - fitted.height) / 2
+    )
+
+    return CGRect(origin: origin, size: fitted)
+}
+
+private let palmaresSize: CGSize = {
+    return NSImage(named: "palmares annuel")?.size ?? .init(width: 1, height: 1)
+}()
+
+private let firstYear = 2017
+private var currentYear: Int {
+    Calendar.current.component(.year, from: Date())
+}

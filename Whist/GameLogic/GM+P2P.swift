@@ -746,7 +746,6 @@ extension GameManager {
     private func attemptP2PConnection(with peerId: PlayerId) {
         let localPlayerId = PlayerId(rawValue: preferences.playerId)!
         let player = gameState.getPlayer(by: peerId) // Get the player object
-        let previousConnectionPhase = player.connectionPhase
 
         logger.logRTC("GM: Attempting P2P with \(peerId.rawValue). Peer's previous P2P phase: \(player.connectionPhase.rawValue), Firebase Online: \(player.firebasePresenceOnline)")
 
