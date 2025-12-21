@@ -32,11 +32,30 @@ extension GameManager {
     // MARK: - Sequencing helpers
     private func nextSequence(_ completion: @escaping (Int) -> Void) {
         Task {
-            do {
-                let seq = try await FirebaseService.shared.nextActionSequence()
-                completion(seq)
-            } catch {
-                logger.fatalErrorAndLog("Sequence error: \(error.localizedDescription).")
+            let maxRetries = 6
+            var attempt = 0
+            var baseDelay: UInt64 = 100_000_000 // 0.1s in nanoseconds
+
+            while !Task.isCancelled && attempt < maxRetries {
+                do {
+                    let seq = try await FirebaseService.shared.nextActionSequence()
+                    completion(seq)
+                    return
+                } catch {
+                    attempt += 1
+                    logger.log("Sequence reservation failed (attempt \(attempt)/\(maxRetries)): \(error.localizedDescription)")
+
+                    if attempt >= maxRetries {
+                        logger.log("Giving up reserving sequence after \(attempt) attempts. Action will not be sent.")
+                        return
+                    }
+
+                    // Exponential backoff with a bit of jitter to avoid stampeding
+                    let jitter: UInt64 = UInt64(Int.random(in: 0...50_000_000)) // up to 50ms
+                    let sleepNs = min(baseDelay + jitter, 2_000_000_000) // cap single wait at 2s
+                    try? await Task.sleep(nanoseconds: sleepNs)
+                    baseDelay = min(baseDelay * 2, 1_000_000_000) // cap base delay growth at 1s
+                }
             }
         }
     }
@@ -445,3 +464,4 @@ extension GameManager {
         }
     }
 }
+
