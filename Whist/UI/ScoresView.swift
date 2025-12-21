@@ -87,6 +87,7 @@ struct SummaryView: View {
     @EnvironmentObject var gameManager: GameManager
     let year: Int
     @State private var monthlySummaries: [MonthlySummary] = []
+    @State private var glowPulse: Bool = false
 
     // Compute overall totals from the monthly summaries.
     var total: (gg: Int, dd: Int, toto: Int, ggTally: Int, ddTally: Int, totoTally: Int) {
@@ -124,14 +125,6 @@ struct SummaryView: View {
             .map { $0.id }
     }
 
-    private func backgroundColor(for id: PlayerId) -> Color {
-        switch id {
-        case .dd: return .yellow
-        case .gg: return .blue
-        case .toto: return .green
-        }
-    }
-
     private func avatarView(for id: PlayerId, size: CGFloat) -> some View {
         let p = gameManager.gameState.getPlayer(by: id)
         
@@ -151,7 +144,7 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func annualPodiumHeader() -> some View {
-        if year == currentYear {
+        if year == currentYear || monthlySummaries.isEmpty {
             EmptyView() // hide for current year
         } else {
             let order = podiumOrder()
@@ -162,6 +155,24 @@ struct SummaryView: View {
                     Image("palmares annuel")
                         .resizable()
                         .scaledToFit()
+                        // Golden glow: layered soft shadows
+                        .shadow(color: Color(red: 1.0, green: 0.84, blue: 0.0).opacity(glowPulse ? 0.55 : 0.25), radius: glowPulse ? 36 : 12, x: 0, y: 0)
+                        .shadow(color: Color(red: 1.0, green: 0.65, blue: 0.0).opacity(glowPulse ? 0.35 : 0.15), radius: glowPulse ? 22 : 8, x: 0, y: 0)
+                        // Subtle radiant bloom along the edges
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(
+                                    LinearGradient(colors: [
+                                        Color(red: 1.0, green: 0.95, blue: 0.6),
+                                        Color(red: 1.0, green: 0.85, blue: 0.2),
+                                        Color(red: 1.0, green: 0.70, blue: 0.0)
+                                    ], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                    lineWidth: glowPulse ? 3 : 1.5
+                                )
+                                .blur(radius: glowPulse ? 6 : 2)
+                                .opacity(0.85)
+                                .blendMode(.plusLighter)
+                        )
                         .overlay(alignment: .topLeading) {
                             GeometryReader { geo in
                                 let rect = aspectFitRect(container: geo.size, imageSize: palmaresSize)
@@ -187,89 +198,93 @@ struct SummaryView: View {
                                     .position(x: rightX, y: othersY)
                             }
                         }
+                        .animation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true), value: glowPulse)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 8)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 12)
+                .onAppear { glowPulse = true }
+                .onDisappear { glowPulse = false }
             }
         }
     }
 
     var body: some View {
-        annualPodiumHeader()
-            .scaleEffect(1.2)
-        VStack(alignment: .leading) {
-            // Table header row
-            HStack {
-                Text("Mois").frame(width: 100, alignment: .leading).foregroundColor(.secondary)
-                Spacer()
-                Text("GG").frame(width: 40, alignment: .center).foregroundColor(.secondary)
-                Text("DD").frame(width: 40, alignment: .center).foregroundColor(.secondary)
-                Text("Toto").frame(width: 40, alignment: .center).foregroundColor(.secondary)
-                Rectangle()
-                    .frame(width: 1, height: 20)
-                    .foregroundColor(Color(NSColor.separatorColor))
-                Text("GG").frame(width: 40, alignment: .center).foregroundColor(.secondary)
-                Text("DD").frame(width: 40, alignment: .center).foregroundColor(.secondary)
-                Text("Toto").frame(width: 40, alignment: .center).foregroundColor(.secondary)
-            }
-            .font(.subheadline)
-            .padding(.vertical, 4)
+        ScrollView {
+            annualPodiumHeader()
+                .scaleEffect(x: 1.2, y: 1.2, anchor: .center)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Divider()
-
-            // Data rows
-            ForEach(monthlySummaries) { summary in
+            VStack(alignment: .leading) {
+                // Table header row
                 HStack {
-                    Text(summary.month).frame(width: 100, alignment: .leading).foregroundColor(.primary)
+                    Text("Mois").frame(width: 100, alignment: .leading).foregroundColor(.secondary)
                     Spacer()
-                    Text("\(summary.ggPoints)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                    Text("\(summary.ddPoints)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                    Text("\(summary.totoPoints)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                    Text("GG").frame(width: 40, alignment: .center).foregroundColor(.secondary)
+                    Text("DD").frame(width: 40, alignment: .center).foregroundColor(.secondary)
+                    Text("Toto").frame(width: 40, alignment: .center).foregroundColor(.secondary)
                     Rectangle()
                         .frame(width: 1, height: 20)
                         .foregroundColor(Color(NSColor.separatorColor))
-                    Text("\(summary.ggTally)").frame(width: 40, alignment: .center)
-                    Text("\(summary.ddTally)").frame(width: 40, alignment: .center)
-                    Text("\(summary.totoTally)").frame(width: 40, alignment: .center)
+                    Text("GG").frame(width: 40, alignment: .center).foregroundColor(.secondary)
+                    Text("DD").frame(width: 40, alignment: .center).foregroundColor(.secondary)
+                    Text("Toto").frame(width: 40, alignment: .center).foregroundColor(.secondary)
                 }
-                .padding(.vertical, 2)
-            }
+                .font(.subheadline)
+                .padding(.vertical, 4)
 
-            Divider()
+                Divider()
 
-            // Total row
-            HStack {
-                Text("Total").frame(width: 100, alignment: .leading).foregroundColor(.primary)
-                Spacer()
-                Text("\(total.gg)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                Text("\(total.dd)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                Text("\(total.toto)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                Rectangle()
-                    .frame(width: 1, height: 20)
-                    .foregroundColor(Color(NSColor.separatorColor))
-                Text("\(total.ggTally)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                Text("\(total.ddTally)").frame(width: 40, alignment: .center).foregroundColor(.primary)
-                Text("\(total.totoTally)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                // Data rows
+                ForEach(monthlySummaries) { summary in
+                    HStack {
+                        Text(summary.month).frame(width: 100, alignment: .leading).foregroundColor(.primary)
+                        Spacer()
+                        Text("\(summary.ggPoints)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                        Text("\(summary.ddPoints)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                        Text("\(summary.totoPoints)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                        Rectangle()
+                            .frame(width: 1, height: 20)
+                            .foregroundColor(Color(NSColor.separatorColor))
+                        Text("\(summary.ggTally)").frame(width: 40, alignment: .center)
+                        Text("\(summary.ddTally)").frame(width: 40, alignment: .center)
+                        Text("\(summary.totoTally)").frame(width: 40, alignment: .center)
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                Divider()
+
+                // Total row
+                HStack {
+                    Text("Total").frame(width: 100, alignment: .leading).foregroundColor(.primary)
+                    Spacer()
+                    Text("\(total.gg)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                    Text("\(total.dd)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                    Text("\(total.toto)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                    Rectangle()
+                        .frame(width: 1, height: 20)
+                        .foregroundColor(Color(NSColor.separatorColor))
+                    Text("\(total.ggTally)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                    Text("\(total.ddTally)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                    Text("\(total.totoTally)").frame(width: 40, alignment: .center).foregroundColor(.primary)
+                }
+                .font(.headline)
+                .padding(.vertical, 4)
             }
-            .font(.headline)
-            .padding(.vertical, 4)
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(NSColor.windowBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1))
         }
-        .padding()
-        .background(RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(NSColor.windowBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color(NSColor.separatorColor), lineWidth: 1))
         .onAppear {
-            Task {
-                await loadData()
-            }
+            Task { await loadData() }
         }
         .onChange(of: year) { _ in
-            Task {
-                await loadData()
-            }
+            monthlySummaries = []
+            Task { await loadData() }
         }
     }
     
