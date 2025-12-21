@@ -464,6 +464,13 @@ struct MonthGroup: Identifiable {
 struct DetailedScoresView: View {
     let year: Int
     @State private var monthGroups: [MonthGroup] = []
+    private let dayColWidth: CGFloat = 70
+    private let scoreColWidth: CGFloat = 62
+    private let colSpacing: CGFloat = 10
+
+    private var gridWidth: CGFloat {
+        dayColWidth + (scoreColWidth * 3) + (colSpacing * 3) // 4 columns => 3 gaps
+    }
 
     var body: some View {
         ZStack {
@@ -475,69 +482,84 @@ struct DetailedScoresView: View {
                         .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                 )
 
-            List {
-                ForEach(monthGroups) { group in
-                    // Section header aligned with score columns
-                    Section(
-                        header: HStack {
-                            Text(group.monthName)
-                                .font(.headline)
-                                .frame(width: 80, alignment: .leading)
-                            Spacer(minLength: 0)
-                            Text("GG \(group.tallies.gg)").frame(width: 50)
-                            Text("DD \(group.tallies.dd)").frame(width: 50)
-                            Text("Toto \(group.tallies.toto)").frame(width: 50)
-                        }
-                    ) {
-                        // Group this month’s games by day
-                        let calendar = Calendar.current
-                        let byDay = Dictionary(grouping: group.scores) {
-                            calendar.component(.day, from: $0.date)
-                        }
-                        let days = byDay.keys.sorted()
+            VStack(spacing: 10) {
 
-                        ForEach(days, id: \.self) { day in
-                            let dayScores = byDay[day]!.sorted { $0.date < $1.date }
-
-                            ForEach(dayScores) { score in
-                                let pts = calculateGamePoints(for: score)
-
-                                HStack {
-                                    // Show day number only once
-                                    if score.id == dayScores.first?.id {
-                                        Text("\(day)").frame(width: 40, alignment: .leading)
-                                    } else {
-                                        Text("").frame(width: 40)
-                                    }
-
-                                    Spacer(minLength: 0)
-
-                                    Text("\(score.ggScore)")
-                                        .frame(width: 50)
-                                        .foregroundColor(colorForPoints(pts.gg))
-                                    Text("\(score.ddScore)")
-                                        .frame(width: 50)
-                                        .foregroundColor(colorForPoints(pts.dd))
-                                    Text("\(score.totoScore)")
-                                        .frame(width: 50)
-                                        .foregroundColor(colorForPoints(pts.toto))
-                                }
-                                .listRowSeparator(.hidden)
+                List {
+                    ForEach(monthGroups) { group in
+                        Section(
+                            header: monthHeader(group)
+                        ) {
+                            // Group this month’s games by day
+                            let calendar = Calendar.current
+                            let byDay = Dictionary(grouping: group.scores) {
+                                calendar.component(.day, from: $0.date)
                             }
+                            let days = byDay.keys.sorted()
 
-                            Divider()
+                            ForEach(days, id: \ .self) { day in
+                                let dayScores = byDay[day]!.sorted { $0.date < $1.date }
+
+                                ForEach(dayScores) { score in
+                                    let pts = calculateGamePoints(for: score)
+
+                                    HStack(alignment: .firstTextBaseline, spacing: colSpacing) {
+                                        if score.id == dayScores.first?.id {
+                                            Text("\(day)")
+                                                .font(.headline)
+                                                .frame(width: dayColWidth, alignment: .leading)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Text("")
+                                                .frame(width: dayColWidth, alignment: .leading)
+                                        }
+
+                                        ScoreValueCell(value: score.ggScore, rankPoints: pts.gg)
+                                            .frame(width: scoreColWidth)
+                                        ScoreValueCell(value: score.ddScore, rankPoints: pts.dd)
+                                            .frame(width: scoreColWidth)
+                                        ScoreValueCell(value: score.totoScore, rankPoints: pts.toto)
+                                            .frame(width: scoreColWidth)
+                                    }
+                                    .frame(width: gridWidth, alignment: .leading)          // <- fixed grid
+                                    .frame(maxWidth: .infinity, alignment: .center)        // <- centered in row
+                                    .padding(.vertical, 4)
+                                    .listRowSeparator(.hidden)
+                                }
+
+                                Divider()
+                            }
                         }
                     }
+                    .listRowSeparator(.hidden)
                 }
+                .listStyle(.plain)
                 .listRowSeparator(.hidden)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .listStyle(.plain)
-            .listRowSeparator(.hidden)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .padding()
         .onAppear { Task { await loadData() } }
         .onChange(of: year) { _ in Task { await loadData() } }
+    }
+
+    @ViewBuilder
+    private func monthHeader(_ group: MonthGroup) -> some View {
+        HStack(spacing: colSpacing) {
+            Text(group.monthName)
+                .font(.headline)
+                .frame(width: dayColWidth, alignment: .leading)
+
+            PlayerHeader(title: "GG", points: group.tallies.gg)
+                .frame(width: scoreColWidth)
+            PlayerHeader(title: "DD", points: group.tallies.dd)
+                .frame(width: scoreColWidth)
+            PlayerHeader(title: "Toto", points: group.tallies.toto)
+                .frame(width: scoreColWidth)
+        }
+        .frame(width: gridWidth, alignment: .leading)       // <- fixed grid
+        .frame(maxWidth: .infinity, alignment: .center)     // <- centered
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
     }
 
     private func loadData() async {
@@ -577,11 +599,68 @@ struct DetailedScoresView: View {
         }
     }
 
-    func colorForPoints(_ points: Int) -> Color {
-        switch points {
-        case 2: return Color.blue
-        case 1: return Color.green
-        default: return Color.primary
+    private struct PlayerHeader: View {
+        let title: String
+        let points: Int
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Text("\(points)")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                    )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private struct ScoreValueCell: View {
+        let value: Int
+        let rankPoints: Int
+
+        private var badgeText: String? {
+            switch rankPoints {
+            case 2: return "🥇"
+            case 1: return "🥈"
+            default: return nil
+            }
+        }
+
+        private var background: Color {
+            switch rankPoints {
+            case 2: return Color.accentColor.opacity(0.20)
+            case 1: return Color.accentColor.opacity(0.10)
+            default: return Color.clear
+            }
+        }
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Text("\(value)")
+                    .font(.body.monospacedDigit())
+                    .foregroundColor(.primary)
+
+                if let badgeText {
+                    Text(badgeText)
+                        .font(.caption)
+                        .accessibilityLabel(rankPoints == 2 ? "Gagnant" : "Deuxième")
+                }
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(background)
+            )
         }
     }
 }
