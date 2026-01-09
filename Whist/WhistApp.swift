@@ -247,6 +247,8 @@ class Preferences: ObservableObject {
     @AppStorage("patternOpacity") var patternOpacity: Double = 0.5
     @AppStorage("patternScale") private var patternScaleStorage: Double = 0.5
     @AppStorage("enabledRandomColors") private var enabledRandomColorsData: Data?
+    // Per-sound volumes (0 = mute). Stored as JSON in UserDefaults.
+    @AppStorage("soundVolumes") private var soundVolumesData: Data?
     #if DEBUG
     @Published var playerId: String = ""
     #else
@@ -280,85 +282,162 @@ class Preferences: ObservableObject {
             }
         }
     }
+
+    // Default volumes come from SoundManager.soundConfigs
+    var soundVolumes: [String: Float] {
+        get {
+            if let data = soundVolumesData,
+               let decoded = try? JSONDecoder().decode([String: Float].self, from: data) {
+                return decoded
+            }
+            // Initialize with defaults from SoundManager
+            var defaults: [String: Float] = [:]
+            for (name, config) in SoundManager.soundConfigs {
+                defaults[name] = config.defaultVolume
+            }
+            return defaults
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                soundVolumesData = data
+            }
+        }
+    }
+
+    func soundVolume(for name: String) -> Float {
+        soundVolumes[name] ?? SoundManager.soundConfigs[name]?.defaultVolume ?? 1.0
+    }
+
+    func setSoundVolume(_ volume: Float, for name: String) {
+        var current = soundVolumes
+        current[name] = max(0.0, min(1.0, volume))
+        soundVolumes = current
+    }
 }
 
 struct PreferencesView: View {
     @EnvironmentObject var preferences: Preferences
     
     var body: some View {
-        VStack {
-            Form {
-                // Section pour les couleurs du tapis
-                Section(header: Text("Couleurs du tapis")
-                    .font(.headline)
-                    .padding(.vertical, 4)) {
-                        ForEach(0..<GameConstants.feltColors.count, id: \.self) { idx in
-                            Toggle(isOn: Binding<Bool>(
-                                get: { preferences.enabledRandomColors.indices.contains(idx) ? preferences.enabledRandomColors[idx] : false },
-                                set: { newValue in
-                                    var current = preferences.enabledRandomColors
-                                    if current.indices.contains(idx) {
-                                        current[idx] = newValue
-                                    } else {
-                                        current = Array(repeating: false, count: GameConstants.feltColors.count)
-                                        current[idx] = newValue
+        TabView {
+            // MARK: - Tapis
+            VStack {
+                Form {
+                    // Section pour les couleurs du tapis
+                    Section(header: Text("Couleurs du tapis")
+                        .font(.headline)
+                        .padding(.vertical, 4)) {
+                            ForEach(0..<GameConstants.feltColors.count, id: \.self) { idx in
+                                Toggle(isOn: Binding<Bool>(
+                                    get: { preferences.enabledRandomColors.indices.contains(idx) ? preferences.enabledRandomColors[idx] : false },
+                                    set: { newValue in
+                                        var current = preferences.enabledRandomColors
+                                        if current.indices.contains(idx) {
+                                            current[idx] = newValue
+                                        } else {
+                                            current = Array(repeating: false, count: GameConstants.feltColors.count)
+                                            current[idx] = newValue
+                                        }
+                                        preferences.enabledRandomColors = current
                                     }
-                                    preferences.enabledRandomColors = current
-                                }
-                            )) {
-                                HStack {
-                                    Circle()
-                                        .fill(GameConstants.feltColors[idx])
-                                        .frame(width: 20, height: 20)
-                                    Text(feltName(for: idx))
+                                )) {
+                                    HStack {
+                                        Circle()
+                                            .fill(GameConstants.feltColors[idx])
+                                            .frame(width: 20, height: 20)
+                                        Text(feltName(for: idx))
+                                    }
                                 }
                             }
                         }
-                    }
-                
-                // Section pour le toggle de l'usure du tapis
-                Section(header: Text("Détails")
-                    .font(.headline)
-                    .padding(.vertical, 4)) {
-                        Toggle("Usure du tapis", isOn: $preferences.wearIntensity)
-                        Toggle("Motifs", isOn: $preferences.motif)
-                    }
-            }
-            
-            // Bouton pour rafraîchir le background
-            Button("Rafraîchir le tapis") {
-                // Récupérer les indices des couleurs activées
-                let enabledIndices = preferences.enabledRandomColors.enumerated().compactMap { (index, isEnabled) in
-                    isEnabled ? index : nil
-                }
-                // Si au moins une couleur est sélectionnée, on choisit aléatoirement l'une d'entre elles
-                if let newIndex = enabledIndices.randomElement() {
-                    preferences.selectedFeltIndex = newIndex
-                }
-            }
-            .padding(.top)
-            
-            Form {
-                Section(header: Text("Identité du joueur")
-                    .font(.headline)
-                    .padding(.vertical, 4)) {
-                        if preferences.playerId.isEmpty {
-                            Text("Veuillez choisir votre identité")
-                                .foregroundColor(.red)
-                                .font(.caption)
+
+                    // Section pour le toggle de l'usure du tapis
+                    Section(header: Text("Détails")
+                        .font(.headline)
+                        .padding(.vertical, 4)) {
+                            Toggle("Usure du tapis", isOn: $preferences.wearIntensity)
+                            Toggle("Motifs", isOn: $preferences.motif)
                         }
-                        Picker("", selection: $preferences.playerId) {
-                            ForEach(["dd", "gg", "toto"], id: \.self) { id in
-                                Text(id).tag(id)
+                }
+
+                // Bouton pour rafraîchir le background
+                Button("Rafraîchir le tapis") {
+                    // Récupérer les indices des couleurs activées
+                    let enabledIndices = preferences.enabledRandomColors.enumerated().compactMap { (index, isEnabled) in
+                        isEnabled ? index : nil
+                    }
+                    // Si au moins une couleur est sélectionnée, on choisit aléatoirement l'une d'entre elles
+                    if let newIndex = enabledIndices.randomElement() {
+                        preferences.selectedFeltIndex = newIndex
+                    }
+                }
+                .padding(.top)
+            }
+            .padding()
+            .tabItem {
+                Label("Tapis", systemImage: "squareshape.split.2x2")
+            }
+
+            // MARK: - Sons
+            VStack {
+                Form {
+                    Section(header: Text("Effets sonores")
+                        .font(.headline)
+                        .padding(.vertical, 4)) {
+                            let keys = SoundManager.soundConfigs.keys.sorted()
+                            ForEach(keys, id: \.self) { key in
+                                HStack(spacing: 12) {
+                                    Text(key)
+                                        .frame(width: 140, alignment: .leading)
+
+                                    Slider(
+                                        value: Binding<Double>(
+                                            get: { Double(preferences.soundVolume(for: key)) },
+                                            set: { preferences.setSoundVolume(Float($0), for: key) }
+                                        ),
+                                        in: 0...1
+                                    )
+
+                                    Text("\(Int(preferences.soundVolume(for: key) * 100))%")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 44, alignment: .trailing)
+                                }
                             }
                         }
-                        .pickerStyle(SegmentedPickerStyle())
-                    }
+                }
+            }
+            .padding()
+            .tabItem {
+                Label("Sons", systemImage: "speaker.wave.2")
+            }
+
+            // MARK: - Identité
+            VStack {
+                Form {
+                    Section(header: Text("Identité du joueur")
+                        .font(.headline)
+                        .padding(.vertical, 4)) {
+                            if preferences.playerId.isEmpty {
+                                Text("Veuillez choisir votre identité")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                            }
+                            Picker("", selection: $preferences.playerId) {
+                                ForEach(["dd", "gg", "toto"], id: \.self) { id in
+                                    Text(id).tag(id)
+                                }
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                        }
+                }
+            }
+            .padding()
+            .tabItem {
+                Label("Identité", systemImage: "person.crop.circle")
             }
         }
-        .padding()
-        // Ajuste la taille de la fenêtre à son contenu
-        .fixedSize()
+        .frame(width: 400)
     }
     
     func feltName(for index: Int) -> String {
@@ -413,3 +492,4 @@ struct NetworkMenuCommands: Commands {
         }
     }
 }
+    
