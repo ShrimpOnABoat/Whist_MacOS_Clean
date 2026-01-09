@@ -626,19 +626,19 @@ struct DetailedScoresView: View {
         let value: Int
         let rankPoints: Int
 
-        private var badgeText: String? {
-            switch rankPoints {
-            case 2: return "🥇"
-            case 1: return "🥈"
-            default: return nil
-            }
-        }
+        @Environment(\.colorScheme) private var colorScheme
 
         private var background: Color {
+            let isDark = (colorScheme == .dark)
             switch rankPoints {
-            case 2: return Color.accentColor.opacity(0.20)
-            case 1: return Color.accentColor.opacity(0.10)
-            default: return Color.clear
+            case 2:
+                // Stronger highlight for first place in dark mode
+                return Color.accentColor.opacity(isDark ? 0.35 : 0.20)
+            case 1:
+                // Slightly stronger than before in dark mode
+                return Color.accentColor.opacity(isDark ? 0.22 : 0.10)
+            default:
+                return Color.clear
             }
         }
 
@@ -646,20 +646,19 @@ struct DetailedScoresView: View {
             HStack(spacing: 6) {
                 Text("\(value)")
                     .font(.body.monospacedDigit())
+                    .fontWeight(rankPoints == 2 ? .bold : .regular)
                     .foregroundColor(.primary)
-
-                if let badgeText {
-                    Text(badgeText)
-                        .font(.caption)
-                        .accessibilityLabel(rankPoints == 2 ? "Gagnant" : "Deuxième")
-                }
             }
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(rankPoints == 2 ? 1 : 0), lineWidth: 1)
             )
         }
     }
