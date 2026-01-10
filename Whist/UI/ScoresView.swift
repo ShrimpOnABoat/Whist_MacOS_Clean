@@ -485,12 +485,16 @@ struct DetailedScoresView: View {
                 )
 
             VStack(spacing: 10) {
-                HStack {
-                    Text("Plus longue série (") + Text("\(longestStreakValue)").bold() + Text("): ") + Text(longestStreakPlayers.joined(separator: ", ")).bold()
+                if longestStreakValue > 0 {
+                    HStack {
+                        Spacer()
+                        (Text("Plus longue série (") + Text("\(longestStreakValue)").bold() + Text("): ") + Text(longestStreakPlayers.joined(separator: ", ")).bold())
+                            .multilineTextAlignment(.center)
+                        Spacer()
+                    }
+                    .padding(.top, 6)
+                    .padding(.horizontal, 12)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.top, 6)
 
                 List {
                     ForEach(monthGroups) { group in
