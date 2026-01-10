@@ -468,7 +468,8 @@ class GameManager: ObservableObject {
         let shouldRevealTrump =
             gameState.round > 3 && ((
             allPlayersBet() &&
-            gameState.playerPlaced(1)?.scores.last != gameState.playerPlaced(3)?.scores.last
+            !allScoresEqual()
+//            gameState.playerPlaced(1)?.scores.last != gameState.playerPlaced(3)?.scores.last
         ) || ({ // Use a closure to safely unwrap and compare scores
             guard let localScore = gameState.localPlayer?.scores.last, // Safely get local player's last score
                   let secondPlacePlayer = gameState.playerPlaced(2),   // Safely get player in 2nd place
