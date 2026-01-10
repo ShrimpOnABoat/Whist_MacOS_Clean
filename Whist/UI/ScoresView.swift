@@ -464,6 +464,8 @@ struct MonthGroup: Identifiable {
 struct DetailedScoresView: View {
     let year: Int
     @State private var monthGroups: [MonthGroup] = []
+    @State private var longestStreakValue: Int = 0
+    @State private var longestStreakPlayers: [String] = []
     private let dayColWidth: CGFloat = 70
     private let scoreColWidth: CGFloat = 62
     private let colSpacing: CGFloat = 10
@@ -483,6 +485,12 @@ struct DetailedScoresView: View {
                 )
 
             VStack(spacing: 10) {
+                HStack {
+                    Text("Plus longue série (") + Text("\(longestStreakValue)").bold() + Text("): ") + Text(longestStreakPlayers.joined(separator: ", ")).bold()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
 
                 List {
                     ForEach(monthGroups) { group in
@@ -541,8 +549,35 @@ struct DetailedScoresView: View {
         .onAppear { Task { await loadData() } }
         .onChange(of: year) { _ in Task { await loadData() } }
     }
+    
+    private func computeLongestStreaks(for year: Int, scores: [GameScore]) -> (value: Int, players: [String]) {
+        let calendar = Calendar.current
+        // Filter scores to the given year
+        let yearScores = scores.filter { calendar.component(.year, from: $0.date) == year }
 
-    @ViewBuilder
+        // Track the maximum consecutive wins observed for each player in the year
+        var maxGG = 0
+        var maxDD = 0
+        var maxToto = 0
+
+        for score in yearScores {
+            // Prefer explicit consecutive win fields when available; otherwise fall back to 0.
+            if let gg = score.ggConsecutiveWins { maxGG = max(maxGG, gg) }
+            if let dd = score.ddConsecutiveWins { maxDD = max(maxDD, dd) }
+            if let tt = score.totoConsecutiveWins { maxToto = max(maxToto, tt) }
+        }
+
+        // Determine the best value and which players achieved it
+        let best = max(maxGG, max(maxDD, maxToto))
+        var players: [String] = []
+        if best > 0 {
+            if maxGG == best { players.append("GG") }
+            if maxDD == best { players.append("DD") }
+            if maxToto == best { players.append("Toto") }
+        }
+        return (best, players)
+    }
+
     private func monthHeader(_ group: MonthGroup) -> some View {
         HStack(spacing: colSpacing) {
             Text(group.monthName)
@@ -566,6 +601,12 @@ struct DetailedScoresView: View {
         let allScores = await ScoresManager.shared.loadScoresSafely(for: year)
         let calendar = Calendar.current
         let yearScores = allScores.filter { calendar.component(.year, from: $0.date) == year }
+        
+        let longest = computeLongestStreaks(for: year, scores: allScores)
+        await MainActor.run {
+            self.longestStreakValue = longest.value
+            self.longestStreakPlayers = longest.players
+        }
         
         // Group by month
         var byMonth: [Int: [GameScore]] = [:]

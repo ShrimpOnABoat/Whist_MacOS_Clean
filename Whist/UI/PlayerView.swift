@@ -163,12 +163,14 @@ struct PlayerView: View {
                         .frame(width: dynamicSize.sidePlayerWidth - dynamicSize.sidePlayerHandWidth, height: dynamicSize.sidePlayerHandHeight)
                     }
                     .frame(width: dynamicSize.sidePlayerWidth)
+                    .padding(.leading, 8)
                 } else {
                     HStack {
                         StateDisplay()
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .offset(y: dynamicSize.sidePlayerStateYOffset)
                         PlayerInfo(dynamicSize: dynamicSize)
+                            .padding(.trailing, 8)
                     }
                     .frame(width: dynamicSize.sidePlayerInfoWidth)
                     HStack {
@@ -643,3 +645,5 @@ struct ScoreChangeView: View {
             }
     }
 }
+
+

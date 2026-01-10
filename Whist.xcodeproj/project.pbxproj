@@ -125,6 +125,7 @@
 				95A0C6A72CEB85EB00EA513A /* Frameworks */,
 				95A0C6A82CEB85EB00EA513A /* Resources */,
 				9532E1872DBB031F0001A523 /* Remove Extended Attributes */,
+				9556EF292EE510D2008D0884 /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -217,6 +218,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Remove troublesome extended attributes (like com.apple.FinderInfo)\n# which cause strict codesign verification failures.\n\n# Use the specific path Xcode uses for code signing preparations\nTARGET_BUNDLE=\"${CODESIGNING_FOLDER_PATH}\"\n\n# Check if the variable is set and points to a directory\nif [ -d \"$TARGET_BUNDLE\" ]; then\n  echo \"Removing extended attributes from $TARGET_BUNDLE\"\n  /usr/bin/xattr -cr \"$TARGET_BUNDLE\"\n  echo \"Finished removing extended attributes.\"\nelse\n  echo \"Warning: CODESIGNING_FOLDER_PATH variable not set or not a directory ($TARGET_BUNDLE). Skipping xattr removal.\"\n  # You might want to exit with an error if this happens unexpectedly\n  # exit 1 \nfi\n\n# Ensure the script phase exits successfully\nexit 0 \n";
+		};
+		9556EF292EE510D2008D0884 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/bin/sh\nset -euo pipefail\n\ncd \"$SRCROOT\"\necho \"PWD=$(pwd)\"\n\nCOMMITS=$(git rev-list --count HEAD)\necho \"COMMITS=$COMMITS\"\n\nPLIST=\"${BUILT_PRODUCTS_DIR}/${INFOPLIST_PATH}\"\n\n# In case the plist path has become relative/odd, show it:\necho \"Updating plist: $PLIST\"\n\n /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $COMMITS\" \"$PLIST\" \\\n  || /usr/libexec/PlistBuddy -c \"Add :CFBundleVersion string $COMMITS\" \"$PLIST\"\n\necho \"Set CFBundleVersion to $COMMITS\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -371,6 +390,7 @@
 				DEVELOPMENT_TEAM = LBXFB7E892;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Whist/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Whist;
@@ -382,7 +402,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.Tony.Whist;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -406,6 +426,7 @@
 				DEVELOPMENT_TEAM = LBXFB7E892;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Whist/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Whist;
@@ -417,7 +438,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.Tony.Whist;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
