@@ -33,6 +33,7 @@ struct GameView: View {
     @State private var showRoundHistory: Bool = false
     @State private var didMeasureDeck: Bool = false
     @State private var background: AnyView = AnyView(EmptyView())
+    @State private var isHonkOnCooldown: Bool = false
     
     func refreshBackground() {
         logger.log("Refreshing backgroung")
@@ -58,6 +59,68 @@ struct GameView: View {
         // Update UI on the main thread
         self.background = newBackground
         logger.log("Finished executing background refresh")
+    }
+
+    // Matches the action button feel used in PlayerView (hover lift + slight press scale)
+    struct HoverMoveUpButtonStyle: ButtonStyle {
+        let isActive: Bool
+        @State private var yOffset: CGFloat = 0
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+                .offset(y: configuration.isPressed ? -2 : (isActive ? yOffset : 0))
+                .animation(.easeInOut(duration: 0.05), value: configuration.isPressed)
+                .animation(.easeInOut(duration: 0.05), value: yOffset)
+                .onHover { isHovering in
+                    if isActive {
+                        withAnimation {
+                            yOffset = isHovering ? -3 : 0
+                        }
+                    }
+                }
+        }
+    }
+
+    // Icon-only action button, styled like PlayerView's action buttons
+    struct InsetTableButton: View {
+        let systemName: String?
+        let imageName: String?
+        let size: CGFloat
+        var isOn: Bool = false
+        var accent: Color = .green
+        var isEnabled: Bool = true
+        var action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                Group {
+                    if let imageName {
+                        Image(imageName)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(size * 0.22)
+                            .foregroundColor(isOn ? .white : .black)
+                    } else if let systemName {
+                        Image(systemName: systemName)
+                            .font(.system(size: size * 0.48, weight: .heavy))
+                            .foregroundColor(isOn ? .white : .black)
+                    }
+                }
+                .frame(width: size, height: size)
+                .background(isOn ? accent : Color.white.opacity(0.5))
+                .cornerRadius(8)
+                .shadow(radius: 5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isOn ? accent : Color.white, lineWidth: 2)
+                )
+            }
+            .buttonStyle(HoverMoveUpButtonStyle(isActive: isEnabled))
+            .buttonStyle(PlainButtonStyle())
+            .disabled(!isEnabled)
+            .accessibilityLabel(Text(systemName ?? imageName ?? "button"))
+        }
     }
     
     var body: some View {
@@ -259,43 +322,18 @@ struct GameView: View {
                     HStack(alignment: .bottom, spacing: 16) {
                         
                         if [.playingTricks, .grabTrick].contains(gameManager.gameState.currentPhase) {
-                            Button(action: {
+                            InsetTableButton(
+                                systemName: "bolt.fill",
+                                imageName: nil,
+                                size: dynamicSize.dealerButtonSize,
+                                isOn: gameManager.autoPilot,
+                                accent: .green,
+                                isEnabled: true
+                            ) {
                                 withAnimation(.easeInOut(duration: 0.1)) {
                                     gameManager.autoPilot.toggle()
                                 }
-                            }) {
-                                ZStack {
-                                    Circle()
-                                        .fill(gameManager.autoPilot ? Color.green : Color.gray)
-                                        .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
-                                        .shadow(color: gameManager.autoPilot ? Color.green.opacity(0.6) : Color.clear, radius: 4)
-                                        .overlay(
-                                            // Inner gradient for the 3D effect
-                                            Circle()
-                                                .fill(
-                                                    LinearGradient(
-                                                        gradient: Gradient(colors: [
-                                                            Color.white.opacity(0.4),
-                                                            Color.clear
-                                                        ]),
-                                                        startPoint: .top,
-                                                        endPoint: .bottom
-                                                    )
-                                                )
-                                                .blendMode(.plusLighter)
-                                        )
-                                    
-                                    Image(systemName: "bolt.fill")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: dynamicSize.dealerButtonSize * 0.6, height: dynamicSize.dealerButtonSize * 0.6)
-                                        .foregroundColor(.white)
-                                    
-                                }
                             }
-                            .buttonStyle(PlainButtonStyle())
-                            .accessibility(label: Text(gameManager.autoPilot ? "Désactive le pilote automatique" : "Active le pilote automatique"))
-                            .help(gameManager.autoPilot ? "Désactive le pilote automatique" : "Active le pilote automatique")
                         } else {
                             Circle()
                                 .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
@@ -305,41 +343,33 @@ struct GameView: View {
                         
                         
                         if gameManager.isSlowPoke.values.contains(true) {
-                            Button(action: {
-                                gameManager.sendHonk()
-                            }) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.gray)
-                                        .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
-                                        .shadow(color: Color.gray, radius: 4)
-                                        .overlay(
-                                            
-                                            // Inner gradient for the 3D effect
-                                            Circle()
-                                                .fill(
-                                                    LinearGradient(
-                                                        gradient: Gradient(colors: [
-                                                            Color.white.opacity(0.4),
-                                                            Color.clear
-                                                        ]),
-                                                        startPoint: .top,
-                                                        endPoint: .bottom
-                                                    )
-                                                )
-                                                .blendMode(.plusLighter)
-                                        )
-                                    
-                                    Image("horn")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: dynamicSize.dealerButtonSize * 0.6, height: dynamicSize.dealerButtonSize * 0.6)
-                                        .foregroundColor(.white)
+                            if !isHonkOnCooldown {
+                                InsetTableButton(
+                                    systemName: nil,
+                                    imageName: "horn",
+                                    size: dynamicSize.dealerButtonSize,
+                                    isOn: true,
+                                    accent: .yellow,
+                                    isEnabled: true
+                                ) {
+                                    gameManager.sendHonk()
+                                    isHonkOnCooldown = true
+                                    // Reset after a short delay to prevent spamming
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                        isHonkOnCooldown = false
+                                    }
+                                }
+                            } else {
+                                InsetTableButton(
+                                    systemName: nil,
+                                    imageName: "horn",
+                                    size: dynamicSize.dealerButtonSize,
+                                    isOn: false,
+                                    accent: .yellow,
+                                    isEnabled: false
+                                ) {
                                 }
                             }
-                            .buttonStyle(PlainButtonStyle())
-                            .accessibility(label: Text("Honk horn"))
-                            .help("Play honk sound")
                         }
                         
                         
@@ -516,3 +546,4 @@ struct GridOverlay: View {
         }
     }
 }
+

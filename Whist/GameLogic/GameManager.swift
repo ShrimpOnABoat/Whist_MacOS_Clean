@@ -535,14 +535,32 @@ class GameManager: ObservableObject {
     }
     
     func updateGameStateWithTrumpCancellation() {
-        // Reset trump-related state to cancel the trump choice
+        // Reset trump-related state
         gameState.trumpSuit = nil
         gameState.trumpCards.last?.isFaceDown = true
         showOptions = false
-        
+
         logger.log("Trump choice cancelled by second player.")
-        
-        transition(to: .choosingTrump)
+
+        guard let place = gameState.localPlayer?.place else { return }
+
+        switch place {
+        case 3:
+            // The chooser must choose again
+            transition(to: .choosingTrump)
+
+        case 2:
+            // Second player should wait for a new trump, then discard again
+            transition(to: .waitingForTrump)
+
+        case 1:
+            // First player should NOT see anything new; stay in bidding flow
+            // (optional) force re-evaluation of UI state
+            checkAndAdvanceStateIfNeeded()
+
+        default:
+            checkAndAdvanceStateIfNeeded()
+        }
     }
     
     func updateGameStateWithDiscardedCards(from playerId: PlayerId, with cards: [Card], completion: @escaping () -> Void) {
