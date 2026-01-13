@@ -65,7 +65,7 @@ struct DeckView: View {
     
     func simulateShuffle(newDeck: [Card], completion: @escaping () -> Void) {
         // Play a shuffle sound
-        gameManager.playSound(named: "card shuffle")
+        gameManager.playSound(named: "shuffle")
         
         // Generate random transforms for each card
         randomOffsets = gameState.deck.reduce(into: [:]) { dict, card in

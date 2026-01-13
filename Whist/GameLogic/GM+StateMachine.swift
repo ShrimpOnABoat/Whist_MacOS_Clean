@@ -386,7 +386,7 @@ extension GameManager {
             setPlayerState(to: .idle)
             showConfetti.toggle()
             playSound(named: "applaud")
-            playSound(named: "Confetti")
+            playSound(named: "confetti")
             // Show final results, store the score, transition to .newGame ...
             clearSavedGameAtions()
             // save the game

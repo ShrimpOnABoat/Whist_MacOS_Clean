@@ -86,7 +86,7 @@ struct MovingCardView: View {
                             return 0
                         }
                     }()
-                    gameManager.playSound(named: "play card")
+                    gameManager.playSound(named: "playCard")
                     withAnimation(Animation.timingCurve(0.4, 0, 0.2, 1, duration: animationDuration)) {
                         self.rotation = toState.rotation + randomSpin
                         self.scale = toState.scale
@@ -135,7 +135,7 @@ struct MovingCardView: View {
                             gameManager.showImpactEffect = true
                             
                             // Play impact sound - a powerful thud/impact
-                            gameManager.playSound(named: "powerful impact")
+                            gameManager.playSound(named: "impact")
                             
                             // Add secondary animations after the initial impact
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -176,7 +176,7 @@ struct MovingCardView: View {
                                 gameManager.showSubtleFailureEffect = true
                                 
                                 // Play a subtle sound - something like a soft "whoosh" or light tap
-                                gameManager.playSound(named: "soft fail")
+                                gameManager.playSound(named: "fail")
                                 
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                                     // Subtle settling motion

@@ -283,17 +283,17 @@ class Preferences: ObservableObject {
         }
     }
 
-    // Default volumes come from SoundManager.soundConfigs
+    // Default volumes come from SoundManager (stored by sound id)
     var soundVolumes: [String: Float] {
         get {
             if let data = soundVolumesData,
                let decoded = try? JSONDecoder().decode([String: Float].self, from: data) {
                 return decoded
             }
-            // Initialize with defaults from SoundManager
+            // Initialize with defaults from SoundManager (stored by sound id)
             var defaults: [String: Float] = [:]
-            for (name, config) in SoundManager.soundConfigs {
-                defaults[name] = config.defaultVolume
+            for config in SoundManager.allSoundConfigs {
+                defaults[config.id] = config.defaultVolume
             }
             return defaults
         }
@@ -305,7 +305,7 @@ class Preferences: ObservableObject {
     }
 
     func soundVolume(for name: String) -> Float {
-        soundVolumes[name] ?? SoundManager.soundConfigs[name]?.defaultVolume ?? 1.0
+        soundVolumes[name] ?? SoundManager.soundConfigsById[name]?.defaultVolume ?? 1.0
     }
 
     func setSoundVolume(_ volume: Float, for name: String) {
@@ -384,21 +384,21 @@ struct PreferencesView: View {
                     Section(header: Text("Effets sonores")
                         .font(.headline)
                         .padding(.vertical, 4)) {
-                            let keys = SoundManager.soundConfigs.keys.sorted()
-                            ForEach(keys, id: \.self) { key in
+                            let configs = SoundManager.allSoundConfigs.sorted { $0.label < $1.label }
+                            ForEach(configs) { config in
                                 HStack(spacing: 12) {
-                                    Text(key)
+                                    Text(config.label)
                                         .frame(width: 140, alignment: .leading)
 
                                     Slider(
                                         value: Binding<Double>(
-                                            get: { Double(preferences.soundVolume(for: key)) },
-                                            set: { preferences.setSoundVolume(Float($0), for: key) }
+                                            get: { Double(preferences.soundVolume(for: config.id)) },
+                                            set: { preferences.setSoundVolume(Float($0), for: config.id) }
                                         ),
                                         in: 0...1
                                     )
 
-                                    Text("\(Int(preferences.soundVolume(for: key) * 100))%")
+                                    Text("\(Int(preferences.soundVolume(for: config.id) * 100))%")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                         .frame(width: 44, alignment: .trailing)

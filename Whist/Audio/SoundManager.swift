@@ -10,26 +10,41 @@ import AVFoundation
 
 class SoundManager: NSObject, AVAudioPlayerDelegate {
     private var audioPlayers: [String: AVAudioPlayer] = [:]
-    static let soundConfigs: [String: (fileName: String, defaultVolume: Float)] = [
-        "Mélange des cartes": ("card shuffle.mp3", 0.5),
-        "Applaudissements": ("applaud.wav", 0.8),
-        "Suspense - raté": ("fail.wav", 1.0),
-        "Suspense - réussi": ("impact.wav", 1.0),
-        "Confetti": ("Confetti.wav", 1.0),
-        "Klaxon": ("pouet.wav", 1.0),
-        "Clic": ("normal-click.wav", 0.2), // Volume 0 to effectively disable
-        "Mouvement de carte": ("play card.mp3", 0.2)
+
+    struct SoundConfig: Identifiable {
+        let id: String          // Stable internal key used by the game and Preferences
+        let label: String       // User-facing label shown in Settings
+        let fileName: String
+        let defaultVolume: Float
+    }
+
+    /// Single source of truth for all sound effects.
+    /// - `id` is the stable key used by the game code and stored in Preferences.
+    /// - `label` is what we display in the Settings UI.
+    static let allSoundConfigs: [SoundConfig] = [
+        .init(id: "shuffle",  label: "Mélange des cartes",   fileName: "card shuffle.mp3",  defaultVolume: 0.5),
+        .init(id: "applaud",  label: "Applaudissements",    fileName: "applaud.wav",       defaultVolume: 0.8),
+        .init(id: "fail",     label: "Suspense - raté",      fileName: "fail.wav",          defaultVolume: 1.0),
+        .init(id: "impact",   label: "Suspense - réussi",    fileName: "impact.wav",        defaultVolume: 1.0),
+        .init(id: "confetti", label: "Confetti",             fileName: "Confetti.wav",      defaultVolume: 1.0),
+        .init(id: "pouet",    label: "Klaxon",               fileName: "pouet.wav",         defaultVolume: 1.0),
+        .init(id: "click",    label: "Clic",                 fileName: "normal-click.wav",  defaultVolume: 0.2),
+        .init(id: "playCard", label: "Mouvement de carte",    fileName: "play card.mp3",     defaultVolume: 0.2)
     ]
+
+    static let soundConfigsById: [String: SoundConfig] = {
+        Dictionary(uniqueKeysWithValues: allSoundConfigs.map { ($0.id, $0) })
+    }()
 
     override init() {
         super.init()
         preloadAllSounds()
     }
 
-    /// Preload all sound files listed in `soundConfigs`
+    /// Preload all sound files listed in `allSoundConfigs`
     private func preloadAllSounds() {
-        for (baseName, config) in Self.soundConfigs {
-            preloadSound(baseName: baseName, fullFileName: config.fileName)
+        for config in Self.allSoundConfigs {
+            preloadSound(baseName: config.id, fullFileName: config.fileName)
         }
     }
 
@@ -65,13 +80,13 @@ class SoundManager: NSObject, AVAudioPlayerDelegate {
 
     /// Play a preloaded sound. Uses default volume if volume parameter is nil.
     func playSound(named baseName: String, volume: Float? = nil) {
-        let defaultVol = Self.soundConfigs[baseName]?.defaultVolume ?? 1.0
+        let defaultVol = Self.soundConfigsById[baseName]?.defaultVolume ?? 1.0
         let chosenVol = volume ?? defaultVol
         guard chosenVol > 0 else { return }
 
         guard let player = audioPlayers[baseName] else {
             logger.audio("Sound '\(baseName)' was not preloaded. Attempting to load now...")
-            if let config = Self.soundConfigs[baseName] {
+            if let config = Self.soundConfigsById[baseName] {
                 preloadSound(baseName: baseName, fullFileName: config.fileName)
                 if let newlyLoadedPlayer = audioPlayers[baseName] {
                     let finalVolume = volume ?? config.defaultVolume
@@ -85,7 +100,7 @@ class SoundManager: NSObject, AVAudioPlayerDelegate {
             return
         }
 
-        let finalVolume = volume ?? Self.soundConfigs[baseName]?.defaultVolume ?? 1.0
+        let finalVolume = volume ?? Self.soundConfigsById[baseName]?.defaultVolume ?? 1.0
         playLoadedSound(player: player, volume: finalVolume, baseName: baseName)
     }
 
@@ -128,20 +143,16 @@ class SoundManager: NSObject, AVAudioPlayerDelegate {
 
 extension GameManager {
     func playSound(named filename: String) {
-#if DEBUG
-guard gameState.localPlayer?.id == .toto else { return }
-#endif
+        // Use per-sound volume from Preferences (0 = mute)
+        let baseVolume = preferences.soundVolume(for: filename)
+        guard baseVolume > 0 else { return }
 
-// Use per-sound volume from Preferences (0 = mute)
-let baseVolume = preferences.soundVolume(for: filename)
-guard baseVolume > 0 else { return }
-
-if filename != "pouet" {
-    soundManager.playSound(named: filename, volume: baseVolume)
-} else {
-    // Keep the slow/fast variant while still respecting the user's base volume
-    let multiplier: Float = amSlowPoke ? 1.0 : 0.3
-    soundManager.playSound(named: "pouet", volume: baseVolume * multiplier)
-}
+        if filename != "pouet" {
+            soundManager.playSound(named: filename, volume: baseVolume)
+        } else {
+            // Keep the slow/fast variant while still respecting the user's base volume
+            let multiplier: Float = amSlowPoke ? 1.0 : 0.3
+            soundManager.playSound(named: "pouet", volume: baseVolume * multiplier)
+        }
     }
 }
