@@ -1001,5 +1001,31 @@ class GameManager: ObservableObject {
             await self.restoreGameFromActions()
         }
     }
+    
+    // Only available to player toto. Exports all saved game actions as JSON for further analysis.
+    /// Exports all saved game actions for analysis (only for player toto)
+    func exportGameActionsForAnalysis() {
+        guard gameState.localPlayer?.id == .toto else {
+            logger.log("Export not allowed: only toto can export game actions.")
+            return
+        }
+        Task {
+            guard let actions = await persistence.loadGameActions() else {
+                logger.log("No game actions found to export.")
+                return
+            }
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = .prettyPrinted
+                let data = try encoder.encode(actions)
+                let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let exportURL = documents.appendingPathComponent("gameActionsExport.json")
+                try data.write(to: exportURL)
+                logger.log("Exported game actions to \(exportURL.path)")
+            } catch {
+                logger.log("Failed to export game actions: \(error)")
+            }
+        }
+    }
 }
 

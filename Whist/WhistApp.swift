@@ -234,6 +234,12 @@ struct DatabaseMenuCommands: Commands {
                     gameManager.clearSavedGameAtions()
                 }
             }
+            
+            Button("Export Game Actions") {
+                gameManager.exportGameActionsForAnalysis()
+            }
+            .help("Export all saved game actions to a JSON file. Only available to toto.")
+            Divider()
         }
     }
 }
