@@ -1015,13 +1015,15 @@ class GameManager: ObservableObject {
                 return
             }
             do {
+                let currentSequence = try await FirebaseService.shared.getCurrentActionSequence()
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = .prettyPrinted
                 let data = try encoder.encode(actions)
                 let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let exportURL = documents.appendingPathComponent("gameActionsExport.json")
+                let exportURL = documents.appendingPathComponent("gameActionsExport - counter \(currentSequence).json")
                 try data.write(to: exportURL)
                 logger.log("Exported game actions to \(exportURL.path)")
+                                
             } catch {
                 logger.log("Failed to export game actions: \(error)")
             }

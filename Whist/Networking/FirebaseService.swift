@@ -83,6 +83,18 @@ class FirebaseService {
         }
     }
     
+    /// Reads the current value of the monotonic action sequence counter from Firestore.
+    /// If the document or field is missing, returns 1 as the initial default.
+    func getCurrentActionSequence() async throws -> Int {
+        let ref = db.collection(countersCollection).document(counterId)
+        let snapshot = try await ref.getDocument()
+        if let data = snapshot.data(), let value = data["next"] as? NSNumber {
+            return Int(truncating: value)
+        } else {
+            return 1
+        }
+    }
+    
     // MARK: - Game Actions
     
     func saveGameAction(_ action: GameAction) async throws {
@@ -256,3 +268,4 @@ class FirebaseService {
         return try snap.documents.compactMap { try $0.data(as: GameAction.self) }
     }
 }
+
