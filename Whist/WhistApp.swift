@@ -490,11 +490,18 @@ struct NetworkMenuCommands: Commands {
     var body: some Commands {
         CommandMenu("Network") {
             Button("Rattraper les actions manquées") {
-//                gameManager.scheduleCatchUp(reason: "Manual trigger via menu")
                 gameManager.resetStateAndRestoreGame()
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
-            .help("Trigger a manual catch-up of missed actions")
+            .help("Relit les gameActions pour resynchroniser la partie en cours.")
+
+            Divider()
+
+            Button("Admin: Retour à Nouvelle partie") {
+                gameManager.adminRefreshToNewGameLobby()
+            }
+            .disabled(gameManager.gameState.localPlayer?.id != .toto)
+            .help("Toto seulement: efface les anciennes gameActions et force un retour synchronisé à Nouvelle partie.")
         }
     }
 }

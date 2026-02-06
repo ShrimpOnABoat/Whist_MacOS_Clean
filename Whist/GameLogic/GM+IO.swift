@@ -156,6 +156,10 @@ extension GameManager {
             
         case .startNewGame:
             self.startNewGame()
+
+        case .refreshSession:
+            logger.log("Received admin refresh session action")
+            self.resetStateAndRestoreGame()
             
         case .amSlowPoke:
             logger.log("Received slowPoke signal")
@@ -309,6 +313,29 @@ extension GameManager {
             }
         }
     }
+
+    func sendRefreshSessionAction() {
+        guard let localPlayer = gameState.localPlayer else { return }
+        let action = GameAction(
+            playerId: localPlayer.id,
+            type: .refreshSession,
+            payload: Data(),
+            timestamp: Date().timeIntervalSince1970,
+            sequence: 0
+        )
+
+        if let actionData = try? JSONEncoder().encode(action),
+           let messageString = String(data: actionData, encoding: .utf8) {
+            let sent = connectionManager.sendMessage(messageString)
+            if sent {
+                logger.log("Sent refresh session action to other players")
+            } else {
+                logger.log("Failed to send refresh session action (some channels might not be open)")
+            }
+        } else {
+            logger.log("Failed to encode refresh session action")
+        }
+    }
     
     func sendCancelTrumpChoice() {
         logger.log("Sending cancel trump choice action to players")
@@ -399,7 +426,7 @@ extension GameManager {
             } else {
                  logger.log("Failed to send P2P action \(action.type) (some channels might not be open)")
             }
-            if ![.amSlowPoke, .honk].contains(action.type) {
+            if ![.amSlowPoke, .honk, .refreshSession].contains(action.type) {
                 saveGameAction(action)
             }
         } else {
@@ -409,7 +436,7 @@ extension GameManager {
     
     func persist(_ action: GameAction) {
         guard !isRestoring else { return }
-        if ![.amSlowPoke, .honk].contains(action.type) {
+        if ![.amSlowPoke, .honk, .refreshSession].contains(action.type) {
             saveGameAction(action)
         }
     }
@@ -464,4 +491,3 @@ extension GameManager {
         }
     }
 }
-

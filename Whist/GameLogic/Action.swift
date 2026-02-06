@@ -18,6 +18,7 @@ struct GameAction: Codable {
         case cancelTrump
         case sendState
         case startNewGame
+        case refreshSession
         case amSlowPoke
         case honk
         case dealer
@@ -47,6 +48,9 @@ struct GameAction: Codable {
                 return [.choosingTrump, .waitingForTrump, .bidding, .discard]
             case .startNewGame:
                 return [.waitingToStart]
+            case .refreshSession:
+                // Administrative reset action; must be accepted regardless of phase.
+                return []
             default:
                 // [] means "valid in any phase" with your current isActionValidInCurrentPhase logic.
                 return []

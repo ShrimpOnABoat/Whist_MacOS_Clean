@@ -55,17 +55,16 @@ extension GameManager {
             
             let localPlayerIdEnum = PlayerId(rawValue: preferences.playerId)!
             let otherPlayerIds = PlayerId.allCases.filter { $0 != localPlayerIdEnum }
-            
-            // 1. Setup PresenceManager's callback for peer changes
-            PresenceManager.shared.onPeerPresenceChanged = { [weak self] (changedPeerId, isOnline) in
-                self?.handlePeerPresenceChange(peerId: changedPeerId, isOnline: isOnline)
-            }
-            // 2. Start monitoring other peers
-            PresenceManager.shared.startMonitoringPeerPresence(for: otherPlayerIds, localPlayerId: localPlayerIdEnum)
-            
+
+            // Important startup order:
+            // 1) clear own stale signaling docs
+            // 2) wire signaling + WebRTC callbacks/listeners
+            // 3) only then start presence monitoring that can trigger attempts
+            // This avoids a race where presence triggers a new offer that gets
+            // deleted by startup cleanup.
             await clearSignalingDataIfNeeded()
-            
-            // 2. Inject Validation Logic into FSM
+
+            // Inject validation logic into signaling manager
             signalingManager.validateSession = { [weak self] (peerId, incomingSessionId) in
                 guard self != nil else { return false }
                 guard let expectedSessionId = PresenceManager.shared.getSessionId(for: peerId) else {
@@ -96,6 +95,13 @@ extension GameManager {
             
             setupConnectionManagerCallbacks(localPlayerId: localPlayerIdEnum)
             signalingManager.setupFirebaseListeners(localPlayerId: localPlayerIdEnum)
+
+            // Presence is started after startup cleanup + listener wiring.
+            PresenceManager.shared.onPeerPresenceChanged = { [weak self] (changedPeerId, isOnline) in
+                self?.handlePeerPresenceChange(peerId: changedPeerId, isOnline: isOnline)
+            }
+            PresenceManager.shared.startMonitoringPeerPresence(for: otherPlayerIds, localPlayerId: localPlayerIdEnum)
+
             setupSignaling()
         }
     }

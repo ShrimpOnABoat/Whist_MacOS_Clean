@@ -998,7 +998,31 @@ class GameManager: ObservableObject {
         // 4) Proceed with restore
         Task { [weak self] in
             guard let self = self else { return }
-            await self.restoreGameFromActions()
+            let restored = await self.restoreGameFromActions()
+            if !restored {
+                await MainActor.run {
+                    logger.log("No actions to restore. Rebuilding fresh setup flow.")
+                    self.transition(to: .setPlayOrder)
+                }
+            }
+        }
+    }
+
+    func adminRefreshToNewGameLobby() {
+        guard gameState.localPlayer?.id == .toto else {
+            logger.log("adminRefreshToNewGameLobby ignored: only toto can trigger it.")
+            resetStateAndRestoreGame()
+            return
+        }
+
+        logger.log("Admin refresh requested by toto. Clearing actions, syncing peers, and returning to waiting-to-start.")
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.persistence.clearGameActions()
+            await MainActor.run {
+                self.sendRefreshSessionAction()
+                self.resetStateAndRestoreGame()
+            }
         }
     }
     
@@ -1030,4 +1054,3 @@ class GameManager: ObservableObject {
         }
     }
 }
-
