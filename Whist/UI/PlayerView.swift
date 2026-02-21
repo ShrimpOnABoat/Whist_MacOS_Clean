@@ -364,7 +364,7 @@ struct PlayerView: View {
                 Button(action: {
                     gameManager.startNewGameAction()
                 }) {
-                    Text("Nouvelle partie")
+                    Text(gameManager.hasDeferredStartNewGame ? "Rejoindre la partie" : "Nouvelle partie")
                         .font(.system(size: dynamicSize.stateTextSize))
                         .padding(.vertical, 5)
                         .padding(.horizontal, 10)
@@ -645,5 +645,3 @@ struct ScoreChangeView: View {
             }
     }
 }
-
-

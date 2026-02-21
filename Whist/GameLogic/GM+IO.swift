@@ -155,7 +155,7 @@ extension GameManager {
             }
             
         case .startNewGame:
-            self.startNewGame()
+            self.handleStartNewGameAction(from: action.playerId)
 
         case .refreshSession:
             logger.log("Received admin refresh session action")
@@ -313,7 +313,7 @@ extension GameManager {
             }
         }
     }
-
+    
     func sendRefreshSessionAction() {
         guard let localPlayer = gameState.localPlayer else { return }
         let action = GameAction(
@@ -466,20 +466,11 @@ extension GameManager {
             self.restorationProgress = 0.0
 
             for a in ordered {
-                if a.sequence == lastAppliedSequence + 1 {
+                // Sequence numbers can have gaps (e.g. after clearing persisted actions).
+                // Apply any strictly newer action; skip duplicates/older ones.
+                if a.sequence > lastAppliedSequence {
                     handleReceivedAction(a)
-                } else if a.sequence > lastAppliedSequence + 1 {
-                    // still a hole → keep waiting; this can happen if end == nil and writes lag
-                    buffered[a.sequence] = a
-                } // else duplicate → skip
-                processed += 1
-                self.restorationProgress = Double(processed) / Double(max(total,1))
-            }
-
-            // After catch-up, drain any buffered consecutive actions
-            while let next = buffered[lastAppliedSequence + 1] {
-                buffered.removeValue(forKey: lastAppliedSequence + 1)
-                handleReceivedAction(next)
+                }
                 processed += 1
                 self.restorationProgress = Double(processed) / Double(max(total,1))
             }

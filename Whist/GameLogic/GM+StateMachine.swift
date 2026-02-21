@@ -106,6 +106,7 @@ extension GameManager {
             Task {
                 let isSavedGame = await restoreGameFromActions()
                 canCatchUp = true
+                scheduleCatchUp(reason: "Restore completed")
                 if !isSavedGame {
                     transition(to: .setPlayOrder)
                 }
@@ -551,6 +552,7 @@ extension GameManager {
     
     func startNewGame() {
         logger.log("Starting new game")
+        hasDeferredStartNewGame = false
         transition(to: .newGame)
     }
     

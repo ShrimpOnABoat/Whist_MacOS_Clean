@@ -87,6 +87,7 @@ class GameManager: ObservableObject {
     @Published var showImpactEffect: Bool = false
     @Published var showSubtleFailureEffect: Bool = false
     @Published var effectPosition: CGPoint = .zero
+    @Published var hasDeferredStartNewGame: Bool = false
     
     @Published var dealerPosition: CGPoint = .zero
     @Published var playersScoresUpdated: Bool = false
@@ -173,13 +174,27 @@ class GameManager: ObservableObject {
     
     // MARK: startNewGame
     func startNewGameAction() {
-//        Task {
-//            await persistence.clearGameActions()
-//        }
+        if hasDeferredStartNewGame {
+            logger.log("Consuming deferred startNewGame action and starting when local player is ready.")
+            startNewGame()
+            return
+        }
         if !isFirstGame {
             persistOrderAndDealer()
         }
         sendStartNewGameAction()
+        startNewGame()
+    }
+    
+    func handleStartNewGameAction(from playerId: PlayerId) {
+        if !isFirstGame && gameState.currentPhase == .waitingToStart {
+            if playerId != gameState.localPlayer?.id {
+                hasDeferredStartNewGame = true
+                logger.log("Received startNewGame from \(playerId.rawValue) while in waitingToStart. Deferring until local player taps Nouvelle partie.")
+                return
+            }
+        }
+        
         startNewGame()
     }
     
