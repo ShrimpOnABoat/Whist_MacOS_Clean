@@ -91,6 +91,7 @@ class GameManager: ObservableObject {
     @Published var dealerPosition: CGPoint = .zero
     @Published var playersScoresUpdated: Bool = false
     var isFirstGame: Bool = true
+    var isFinalizingGameOver: Bool = false
     
     // MARK: - Slowpoke Timer Properties
     var slowpokeTimer: DispatchSourceTimer?
@@ -785,7 +786,11 @@ class GameManager: ObservableObject {
         }
     }
     
-    func clearSavedGameAtions() {
+    func clearSavedGameActions() {
+        guard gameState.localPlayer?.id == .toto else {
+            logger.log("Skipping clearSavedGameActions: only toto can clear shared game actions.")
+            return
+        }
         Task {
             await persistence.clearGameActions()
         }
@@ -837,21 +842,35 @@ class GameManager: ObservableObject {
         }
         // Sort all actions by sequence (ascending)
         let sortedActions = actions.sorted { $0.sequence < $1.sequence }
-
-        // Pick the latest playOrder, dealer, and startNewGame actions to establish authoritative state first
-        let latestPlayOrder = sortedActions.last { $0.type == .playOrder }
-        let latestDealer = sortedActions.last { $0.type == .dealer }
-        let latestStartNewGame = sortedActions.last { $0.type == .startNewGame }
-
+        guard let latestStartNewGame = sortedActions.last(where: { $0.type == .startNewGame }) else {
+            logger.log("No startNewGame action available after sorting. Starting new game...")
+            return false
+        }
+        let latestStartSequence = latestStartNewGame.sequence
+        
+        // Build a session-scoped replay:
+        // - Keep the latest playOrder/dealer at or before the retained startNewGame
+        // - Replay only actions strictly after that startNewGame
+        // This avoids mixing old finished games into the active one during restore.
+        let latestPlayOrder = sortedActions.last { $0.type == .playOrder && $0.sequence <= latestStartSequence }
+            ?? sortedActions.last { $0.type == .playOrder }
+        let latestDealer = sortedActions.last { $0.type == .dealer && $0.sequence <= latestStartSequence }
+            ?? sortedActions.last { $0.type == .dealer }
+        
         // Priority actions to run first (order between them doesn't matter)
         var priorityActions: [GameAction] = []
         if let po = latestPlayOrder { priorityActions.append(po) }
         if let dl = latestDealer { priorityActions.append(dl) }
-        if let sng = latestStartNewGame { priorityActions.append(sng) }
-
-        // Remaining actions exclude all dealer/playOrder/startNewGame (we've established the final ones above)
-        let remaining = sortedActions.filter { $0.type != .dealer && $0.type != .playOrder && $0.type != .startNewGame }
-
+        priorityActions.append(latestStartNewGame)
+        
+        // Remaining actions only come from the retained session tail.
+        let remaining = sortedActions.filter {
+            $0.sequence > latestStartSequence &&
+            $0.type != .dealer &&
+            $0.type != .playOrder &&
+            $0.type != .startNewGame
+        }
+        
         // From the remaining actions, remove all sendState except the latest per player
         var latestSendStateByPlayer: [PlayerId: GameAction] = [:]
         for action in remaining where action.type == .sendState {
@@ -866,9 +885,10 @@ class GameManager: ObservableObject {
 
         // Diagnostics: if multiple startNewGame exist, log and indicate which one kept
         let startNewGameCount = sortedActions.filter { $0.type == .startNewGame }.count
-        if startNewGameCount > 1, let kept = latestStartNewGame {
-            logger.log("Multiple startNewGame actions found (\(startNewGameCount)). Keeping only the latest at seq \(kept.sequence) from \(kept.playerId).")
+        if startNewGameCount > 1 {
+            logger.log("Multiple startNewGame actions found (\(startNewGameCount)). Keeping only the latest at seq \(latestStartNewGame.sequence) from \(latestStartNewGame.playerId).")
         }
+        logger.log("Restore session anchor: startNewGame seq \(latestStartSequence). Replaying only actions after this sequence.")
 
         // For logging (round counting is only for sendDeck in the tail and remains accurate)
         var actionsProcessed: Int = 0

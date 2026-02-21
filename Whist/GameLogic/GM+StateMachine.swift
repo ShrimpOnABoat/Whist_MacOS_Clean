@@ -387,13 +387,33 @@ extension GameManager {
             showConfetti.toggle()
             playSound(named: "applaud")
             playSound(named: "confetti")
-            // Show final results, store the score, transition to .newGame ...
-            clearSavedGameAtions()
-            // save the game
-            saveScore() //Sets the winner too
+            // Show final results and store score
+            saveScore()
             isGameSetup = false // To allow recovery in case of crash
             isFirstGame = false
-            transition(to: .setPlayOrder)
+            guard !isFinalizingGameOver else {
+                            logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
+                            return
+                        }
+                        isFinalizingGameOver = true
+
+                        let finishGameOverFinalization: () -> Void = {
+                            self.isFinalizingGameOver = false
+                            self.transition(to: .setPlayOrder)
+                        }
+
+                        // Clear shared gameActions only once (authority = toto), and only then move forward.
+                        if gameState.localPlayer?.id == .toto {
+                            Task { [weak self] in
+                                guard let self = self else { return }
+                                await self.persistence.clearGameActions()
+                                await MainActor.run {
+                                    finishGameOverFinalization()
+                                }
+                            }
+                        } else {
+                            finishGameOverFinalization()
+                        }
         }
     }
     
@@ -785,4 +805,3 @@ extension GameManager {
         slowpokeTimer = timer
     }
 }
-

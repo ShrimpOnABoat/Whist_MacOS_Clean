@@ -143,6 +143,12 @@ class SoundManager: NSObject, AVAudioPlayerDelegate {
 
 extension GameManager {
     func playSound(named filename: String) {
+        #if DEBUG
+        guard let localPlayer = gameState.localPlayer else {
+            logger.fatalErrorAndLog("Error: Local player is not defined.")
+        }
+        guard localPlayer.id == .toto else { return }
+        #endif
         // Use per-sound volume from Preferences (0 = mute)
         let baseVolume = preferences.soundVolume(for: filename)
         guard baseVolume > 0 else { return }

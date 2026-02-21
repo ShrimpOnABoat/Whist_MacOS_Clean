@@ -125,7 +125,33 @@ class FirebaseService {
             return DecodedAction(action: action, sequence: seq, timestamp: ts)
         }
         
-        let sorted = decoded.sorted { lhs, rhs in
+        // Defensive dedupe for rare sequence collisions/races:
+        // keep only the newest document per sequence number.
+        var dedupedBySequence: [Int64: DecodedAction] = [:]
+        var unsequenced: [DecodedAction] = []
+        var duplicateSequenceCount = 0
+        for item in decoded {
+            guard let sequence = item.sequence else {
+                unsequenced.append(item)
+                continue
+            }
+            if let existing = dedupedBySequence[sequence] {
+                duplicateSequenceCount += 1
+                let existingTS = existing.timestamp ?? .distantPast
+                let candidateTS = item.timestamp ?? .distantPast
+                if candidateTS >= existingTS {
+                    dedupedBySequence[sequence] = item
+                }
+            } else {
+                dedupedBySequence[sequence] = item
+            }
+        }
+        if duplicateSequenceCount > 0 {
+            logger.log("Detected \(duplicateSequenceCount) duplicate gameActions sequence values. Keeping latest timestamp per sequence.")
+        }
+        let normalizedDecoded = Array(dedupedBySequence.values) + unsequenced
+        
+        let sorted = normalizedDecoded.sorted { lhs, rhs in
             switch (lhs.sequence, rhs.sequence) {
             case let (l?, r?):
                 if l != r { return l < r }
@@ -268,4 +294,3 @@ class FirebaseService {
         return try snap.documents.compactMap { try $0.data(as: GameAction.self) }
     }
 }
-

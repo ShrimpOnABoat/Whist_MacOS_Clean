@@ -231,7 +231,7 @@ struct DatabaseMenuCommands: Commands {
                 alert.addButton(withTitle: "Cancel")
                 let response = alert.runModal()
                 if response == .alertFirstButtonReturn {
-                    gameManager.clearSavedGameAtions()
+                    gameManager.clearSavedGameActions()
                 }
             }
             
