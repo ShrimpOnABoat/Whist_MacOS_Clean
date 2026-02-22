@@ -194,9 +194,20 @@ struct GameView: View {
                                         ZStack {
                                             if !(gameManager.showLastTrick && gameManager.gameState.currentPhase == .playingTricks) {
                                                 if gameManager.gameState.currentPhase != .choosingTrump {
-                                                    TableView(gameState: gameManager.gameState, dynamicSize: dynamicSize, showRoundHistory: $showRoundHistory)
+                                                    TableView(
+                                                        gameState: gameManager.gameState,
+                                                        dynamicSize: dynamicSize,
+                                                        showRoundHistory: $showRoundHistory,
+                                                        showWaitingPanelInPlace: gameManager.isFirstGame
+                                                    )
                                                 } else {
-                                                    TableView(gameState: gameManager.gameState, dynamicSize: dynamicSize, showRoundHistory: $showRoundHistory, mode: .trumps)
+                                                    TableView(
+                                                        gameState: gameManager.gameState,
+                                                        dynamicSize: dynamicSize,
+                                                        showRoundHistory: $showRoundHistory,
+                                                        showWaitingPanelInPlace: gameManager.isFirstGame,
+                                                        mode: .trumps
+                                                    )
                                                 }
                                             } else {
                                                 // Display a background for the last trick
@@ -377,6 +388,22 @@ struct GameView: View {
                     }
                     .padding(.leading, 16)
                     .padding(.bottom, 16)
+                }
+
+                // End-of-game lobby panel on top of all game layers.
+                if gameManager.gameState.currentPhase == .waitingToStart && !gameManager.isFirstGame {
+                    ZStack {
+                        Color.clear
+                        TableView(
+                            gameState: gameManager.gameState,
+                            dynamicSize: dynamicSize,
+                            showRoundHistory: $showRoundHistory,
+                            showWaitingPanelInPlace: true
+                        )
+                        .frame(width: dynamicSize.tableWidth, height: dynamicSize.tableHeight)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(10_000)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

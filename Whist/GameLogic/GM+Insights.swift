@@ -554,40 +554,107 @@ extension GameManager {
 
         var roundGapMax = 0.0
         var roundGapMin = Double.greatestFiniteMagnitude
-        for (_, map) in roundDifficultyByPlayer {
+        var roundGapMaxRound: Int?
+        var roundGapMinRound: Int?
+        for (round, map) in roundDifficultyByPlayer {
             let values = Array(map.values)
             guard let maxV = values.max(), let minV = values.min() else { continue }
             let gap = maxV - minV
-            roundGapMax = max(roundGapMax, gap)
-            roundGapMin = min(roundGapMin, gap)
+            if gap > roundGapMax {
+                roundGapMax = gap
+                roundGapMaxRound = round
+            }
+            if gap < roundGapMin {
+                roundGapMin = gap
+                roundGapMinRound = round
+            }
         }
-        if roundGapMax > 0 {
+        if roundGapMax > 0, let r = roundGapMaxRound {
             samples.append(InsightSample(
                 key: "round_difficulty_gap_max",
                 category: "difficulty",
                 value: roundGapMax,
                 direction: .high,
-                text: "Un tour a présenté un gros écart de difficulté (\(String(format: "%.3f", roundGapMax)))."
+                text: "Au tour \(insightRoundLabel(r)), gros écart de difficulté (\(String(format: "%.3f", roundGapMax)))."
             ))
         }
-        if roundGapMin != Double.greatestFiniteMagnitude {
+        if roundGapMin != Double.greatestFiniteMagnitude, let r = roundGapMinRound {
             samples.append(InsightSample(
                 key: "round_difficulty_gap_min",
                 category: "difficulty",
                 value: roundGapMin,
                 direction: .low,
-                text: "Un tour a été très équitable en difficulté (\(String(format: "%.3f", roundGapMin)))."
+                text: "Au tour \(insightRoundLabel(r)), difficulté très équitable (\(String(format: "%.3f", roundGapMin)))."
             ))
         }
 
-        let allMidDensities = roundMidCardDensityByPlayer.values.flatMap { $0.values }
-        if let maxMidDensity = allMidDensities.max() {
+        var hardestHandWinner: (player: PlayerId, round: Int, score: Double)?
+        var easiestHandLoser: (player: PlayerId, round: Int, score: Double)?
+        for (round, byPlayer) in roundDifficultyByPlayer {
+            let roundWeight = 0.6 + 0.4 * (Double(round) / 12.0)
+            for (playerId, quality) in byPlayer {
+                let roundIndex = round - 1
+                let player = gameState.getPlayer(by: playerId)
+                guard player.scores.indices.contains(roundIndex) else { continue }
+                let previous = roundIndex > 0 ? (player.scores[safe: roundIndex - 1] ?? 0) : 0
+                let delta = player.scores[roundIndex] - previous
+
+                let hardWinScore = quality * Double(max(delta, 0)) * roundWeight
+                if hardWinScore > 0 {
+                    if let current = hardestHandWinner {
+                        if hardWinScore > current.score {
+                            hardestHandWinner = (playerId, round, hardWinScore)
+                        }
+                    } else {
+                        hardestHandWinner = (playerId, round, hardWinScore)
+                    }
+                }
+
+                let easyLoseScore = (1.0 - quality) * Double(max(-delta, 0)) * roundWeight
+                if easyLoseScore > 0 {
+                    if let current = easiestHandLoser {
+                        if easyLoseScore > current.score {
+                            easiestHandLoser = (playerId, round, easyLoseScore)
+                        }
+                    } else {
+                        easiestHandLoser = (playerId, round, easyLoseScore)
+                    }
+                }
+            }
+        }
+        if let upsetWin = hardestHandWinner, let upsetLose = easiestHandLoser {
+            if upsetWin.score >= upsetLose.score {
+                samples.append(InsightSample(
+                    key: "mid_card_density_max_round",
+                    category: "difficulty",
+                    value: upsetWin.score,
+                    direction: .high,
+                    text: "\(displayName(for: upsetWin.player)) a eu un jeu pourri au tour \(insightRoundLabel(upsetWin.round)) et a gagné quand même!"
+                ))
+            } else {
+                samples.append(InsightSample(
+                    key: "mid_card_density_max_round",
+                    category: "difficulty",
+                    value: upsetLose.score,
+                    direction: .high,
+                    text: "\(displayName(for: upsetLose.player)) a eu un super jeu au tour \(insightRoundLabel(upsetLose.round)) et a réussi à perdre!"
+                ))
+            }
+        } else if let upsetWin = hardestHandWinner {
             samples.append(InsightSample(
                 key: "mid_card_density_max_round",
                 category: "difficulty",
-                value: maxMidDensity,
+                value: upsetWin.score,
                 direction: .high,
-                text: "Tour très chargé en cartes moyennes (9/10/V/D) avec \(Int((maxMidDensity * 100).rounded()))%."
+                text: "\(displayName(for: upsetWin.player)) a eu un jeu pourri au tour \(insightRoundLabel(upsetWin.round)) et a gagné quand même!"
+            ))
+        } else if let upsetLose = easiestHandLoser {
+            samples.append(InsightSample(
+                key: "mid_card_density_max_round",
+                category: "difficulty",
+                value: upsetLose.score,
+                direction: .high,
+                text: "\(displayName(for: upsetLose.player)) a eu un super jeu au tour \(insightRoundLabel(upsetLose.round)) et a réussi à perdre!"
             ))
         }
 
@@ -799,4 +866,12 @@ extension GameManager {
         let second = sorted.dropFirst().first ?? 0
         return me.score == best && me.score != second && me.score >= 2 * second
     }
+
+    private func insightRoundLabel(_ round: Int) -> String {
+        if round <= 3 {
+            return "\(round)/3"
+        }
+        return "\(round - 2)"
+    }
 }
+

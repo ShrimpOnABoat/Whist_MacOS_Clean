@@ -11,6 +11,7 @@ struct TableView: View {
     @EnvironmentObject var gameManager: GameManager
     @ObservedObject var gameState: GameState
     @Binding var showRoundHistory: Bool
+    let showWaitingPanelInPlace: Bool
     var dynamicSize: DynamicSize
     @State private var showAllInsights: Bool = false
     
@@ -20,18 +21,21 @@ struct TableView: View {
     
     let mode: Mode
 
-    init(gameState: GameState, dynamicSize: DynamicSize, showRoundHistory: Binding<Bool> = .constant(false), mode: Mode = .tricks) {
+    init(gameState: GameState, dynamicSize: DynamicSize, showRoundHistory: Binding<Bool> = .constant(false), showWaitingPanelInPlace: Bool = true, mode: Mode = .tricks) {
         self.gameState = gameState
         self.mode = mode
         self.dynamicSize = dynamicSize
         self._showRoundHistory = showRoundHistory
+        self.showWaitingPanelInPlace = showWaitingPanelInPlace
     }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 if gameManager.gameState.currentPhase == .waitingToStart {
-                    if gameManager.isFirstGame {
+                    if !showWaitingPanelInPlace {
+                        EmptyView()
+                    } else if gameManager.isFirstGame {
                         VStack {
                             Button(action: {
                                 gameManager.startNewGameAction()
