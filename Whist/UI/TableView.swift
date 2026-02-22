@@ -169,7 +169,7 @@ struct TableView: View {
                                 } else {
                                     ScrollView {
                                         VStack(alignment: .leading, spacing: 10) {
-                                            ForEach(Array(gameManager.latestGameAllInsightFacts.prefix(20).enumerated()), id: \.element.id) { index, fact in
+                                            ForEach(Array(gameManager.latestGameAllInsightFacts.enumerated()), id: \.element.id) { index, fact in
                                                 Text("\(index + 1). \(fact.text)")
                                                     .foregroundColor(.white.opacity(0.95))
                                                     .frame(maxWidth: .infinity, alignment: .leading)

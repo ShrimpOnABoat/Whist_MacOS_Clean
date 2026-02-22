@@ -279,6 +279,10 @@ extension GameManager {
             var leadChanges = 0
             var previousLeader: PlayerId?
             var allTiedRounds = 0
+            var roundsInFirst: [PlayerId: Int] = [:]
+            var roundsInLast: [PlayerId: Int] = [:]
+            var startRankByPlayer: [PlayerId: Int] = [:]
+            var endRankByPlayer: [PlayerId: Int] = [:]
             for roundIdx in 0..<roundCount {
                 let scoresAtRound = players.map { ($0.id, $0.scores[safe: roundIdx] ?? 0) }
                 let uniqueScores = Set(scoresAtRound.map(\.1))
@@ -286,6 +290,17 @@ extension GameManager {
                     allTiedRounds += 1
                 }
                 let maxScore = scoresAtRound.map(\.1).max() ?? 0
+                let minScore = scoresAtRound.map(\.1).min() ?? 0
+                for (playerId, score) in scoresAtRound {
+                    if score == maxScore { roundsInFirst[playerId, default: 0] += 1 }
+                    if score == minScore { roundsInLast[playerId, default: 0] += 1 }
+                }
+                let sortedDistinctScores = Array(Set(scoresAtRound.map(\.1))).sorted(by: >)
+                for (playerId, score) in scoresAtRound {
+                    let rank = (sortedDistinctScores.firstIndex(of: score) ?? 0) + 1
+                    if roundIdx == 0 { startRankByPlayer[playerId] = rank }
+                    if roundIdx == roundCount - 1 { endRankByPlayer[playerId] = rank }
+                }
                 let leaders = scoresAtRound.filter { $0.1 == maxScore }
                 if leaders.count == 1 {
                     let currentLeader = leaders[0].0
@@ -309,6 +324,50 @@ extension GameManager {
                 direction: .high,
                 text: "Égalité parfaite sur \(allTiedRounds) tour(s)."
             ))
+
+            if let firstLeader = roundsInFirst.max(by: { $0.value < $1.value }) {
+                samples.append(InsightSample(
+                    key: "rounds_in_first",
+                    category: "momentum",
+                    value: Double(firstLeader.value),
+                    direction: .high,
+                    text: "\(displayName(for: firstLeader.key)) a mené \(firstLeader.value) tours."
+                ))
+            }
+            if let lastLeader = roundsInLast.max(by: { $0.value < $1.value }) {
+                samples.append(InsightSample(
+                    key: "rounds_in_last",
+                    category: "momentum",
+                    value: Double(lastLeader.value),
+                    direction: .high,
+                    text: "\(displayName(for: lastLeader.key)) est resté dernier \(lastLeader.value) tours."
+                ))
+            }
+
+            var bestComeback: (player: PlayerId, value: Int) = (.gg, 0)
+            var worstCollapse: (player: PlayerId, value: Int) = (.gg, 0)
+            for player in players {
+                let startRank = startRankByPlayer[player.id] ?? 1
+                let endRank = endRankByPlayer[player.id] ?? startRank
+                let comeback = max(0, startRank - endRank)
+                let collapse = max(0, endRank - startRank)
+                if comeback > bestComeback.value { bestComeback = (player.id, comeback) }
+                if collapse > worstCollapse.value { worstCollapse = (player.id, collapse) }
+            }
+            samples.append(InsightSample(
+                key: "comeback_rank",
+                category: "momentum",
+                value: Double(bestComeback.value),
+                direction: .high,
+                text: "Remontée folle: \(displayName(for: bestComeback.player)) a gagné \(bestComeback.value) place(s)."
+            ))
+            samples.append(InsightSample(
+                key: "collapse_rank",
+                category: "momentum",
+                value: Double(worstCollapse.value),
+                direction: .high,
+                text: "Chute marquée: \(displayName(for: worstCollapse.player)) a perdu \(worstCollapse.value) place(s)."
+            ))
         }
 
         var exactBest: (player: PlayerId, streak: Int) = (.gg, 0)
@@ -319,6 +378,13 @@ extension GameManager {
         var latestZeroRound: (player: PlayerId, round: Int) = (.gg, 0)
         var roundDeltaMax: (player: PlayerId, value: Int) = (.gg, Int.min)
         var roundDeltaMin: (player: PlayerId, value: Int) = (.gg, Int.max)
+        var negativeDeltaBest: (player: PlayerId, value: Int) = (.gg, 0)
+        var positiveDeltaBest: (player: PlayerId, value: Int) = (.gg, 0)
+        var maxTricksOneRound: (player: PlayerId, value: Int) = (.gg, 0)
+        var highBetLowMade: (player: PlayerId, made: Int)? = nil
+        var betsTotalBest: (player: PlayerId, value: Int) = (.gg, 0)
+        var allTricksWinnerHighestRound: (player: PlayerId, round: Int)? = nil
+        var allTricksLoserHighestRound: (player: PlayerId, round: Int)? = nil
         var gameTotalBetDeltaAbs = 0
         var roundTotalBetDeltaAbsMax = 0
         var roundTotalBetDeltaAbsMaxRound = 0
@@ -330,10 +396,26 @@ extension GameManager {
             var missedCurrent = 0
             var overbidCount = 0
             var underbidCount = 0
+            var betsTotal = 0
+            var negativeDeltaCount = 0
+            var positiveDeltaCount = 0
 
             for i in 0..<count {
                 let announced = player.announcedTricks[i]
                 let made = player.madeTricks[i]
+                betsTotal += announced
+                if made > maxTricksOneRound.value {
+                    maxTricksOneRound = (player.id, made)
+                }
+                if announced >= 6 {
+                    if let current = highBetLowMade {
+                        if made < current.made {
+                            highBetLowMade = (player.id, made)
+                        }
+                    } else {
+                        highBetLowMade = (player.id, made)
+                    }
+                }
                 if announced == made {
                     exactCurrent += 1
                     missedCurrent = 0
@@ -367,11 +449,51 @@ extension GameManager {
                 }
                 let delta = score - previousScore
                 previousScore = score
+                if delta < 0 { negativeDeltaCount += 1 }
+                if delta > 0 { positiveDeltaCount += 1 }
                 if delta > roundDeltaMax.value {
                     roundDeltaMax = (player.id, delta)
                 }
                 if delta < roundDeltaMin.value {
                     roundDeltaMin = (player.id, delta)
+                }
+            }
+            if negativeDeltaCount > negativeDeltaBest.value {
+                negativeDeltaBest = (player.id, negativeDeltaCount)
+            }
+            if positiveDeltaCount > positiveDeltaBest.value {
+                positiveDeltaBest = (player.id, positiveDeltaCount)
+            }
+            if betsTotal > betsTotalBest.value {
+                betsTotalBest = (player.id, betsTotal)
+            }
+        }
+
+        if let winner = lastGameWinner {
+            for player in players {
+                let rounds = Swift.min(player.madeTricks.count, roundCount)
+                for roundIdx in 0..<rounds {
+                    let round = roundIdx + 1
+                    let cardsThisRound = max(round - 2, 1)
+                    if player.madeTricks[roundIdx] == cardsThisRound {
+                        if player.id == winner {
+                            if let current = allTricksWinnerHighestRound {
+                                if round > current.round {
+                                    allTricksWinnerHighestRound = (player.id, round)
+                                }
+                            } else {
+                                allTricksWinnerHighestRound = (player.id, round)
+                            }
+                        } else {
+                            if let current = allTricksLoserHighestRound {
+                                if round > current.round {
+                                    allTricksLoserHighestRound = (player.id, round)
+                                }
+                            } else {
+                                allTricksLoserHighestRound = (player.id, round)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -449,6 +571,85 @@ extension GameManager {
                 text: "Tour difficile: \(displayName(for: roundDeltaMin.player)) a fait \(roundDeltaMin.value) points."
             ))
         }
+        samples.append(InsightSample(
+            key: "negative_delta_count",
+            category: "score",
+            value: Double(negativeDeltaBest.value),
+            direction: .high,
+            text: "\(displayName(for: negativeDeltaBest.player)) a perdu des points sur \(negativeDeltaBest.value) tours."
+        ))
+        samples.append(InsightSample(
+            key: "positive_delta_count",
+            category: "score",
+            value: Double(positiveDeltaBest.value),
+            direction: .high,
+            text: "\(displayName(for: positiveDeltaBest.player)) a gagné des points sur \(positiveDeltaBest.value) tours."
+        ))
+        samples.append(InsightSample(
+            key: "max_tricks_one_round",
+            category: "tricks",
+            value: Double(maxTricksOneRound.value),
+            direction: .high,
+            text: "\(displayName(for: maxTricksOneRound.player)) a pris \(maxTricksOneRound.value) plis sur un tour."
+        ))
+        if let highBetLowMade {
+            samples.append(InsightSample(
+                key: "high_bet_low_made",
+                category: "bidding",
+                value: Double(highBetLowMade.made),
+                direction: .low,
+                text: "\(displayName(for: highBetLowMade.player)) avait annoncé gros mais n'a fait que \(highBetLowMade.made) plis."
+            ))
+        } else {
+            samples.append(InsightSample(
+                key: "high_bet_low_made",
+                category: "bidding",
+                value: 0,
+                direction: .low,
+                text: "Aucune grosse annonce (6+) n'a fini en gros échec."
+            ))
+        }
+        samples.append(InsightSample(
+            key: "bets_total_player",
+            category: "bidding",
+            value: Double(betsTotalBest.value),
+            direction: .high,
+            text: "\(displayName(for: betsTotalBest.player)) a annoncé \(betsTotalBest.value) plis au total."
+        ))
+        if let allTricksWinnerHighestRound {
+            samples.append(InsightSample(
+                key: "all_tricks_win_round_highest",
+                category: "tricks",
+                value: Double(allTricksWinnerHighestRound.round),
+                direction: .high,
+                text: "\(displayName(for: allTricksWinnerHighestRound.player)) a tout pris au tour \(insightRoundLabel(allTricksWinnerHighestRound.round)) et a gagné la partie."
+            ))
+        } else {
+            samples.append(InsightSample(
+                key: "all_tricks_win_round_highest",
+                category: "tricks",
+                value: 0,
+                direction: .high,
+                text: "Personne n'a tout pris sur un tour en gagnant la partie."
+            ))
+        }
+        if let allTricksLoserHighestRound {
+            samples.append(InsightSample(
+                key: "all_tricks_lose_round_highest",
+                category: "tricks",
+                value: Double(allTricksLoserHighestRound.round),
+                direction: .high,
+                text: "\(displayName(for: allTricksLoserHighestRound.player)) a tout pris au tour \(insightRoundLabel(allTricksLoserHighestRound.round)) mais a perdu la partie."
+            ))
+        } else {
+            samples.append(InsightSample(
+                key: "all_tricks_lose_round_highest",
+                category: "tricks",
+                value: 0,
+                direction: .high,
+                text: "Personne n'a tout pris sur un tour en perdant la partie."
+            ))
+        }
 
         if roundCount > 0 {
             for roundIdx in 0..<roundCount {
@@ -500,6 +701,28 @@ extension GameManager {
                 text: "Atout dominant: \(displayName(for: bestGlobalSuit.key)) est sorti \(bestGlobalSuit.value) fois."
             ))
         }
+
+        let suitCounts = Suit.allCases.map { Double(trumpSelectionsBySuit[$0, default: 0]) }
+        let meanCount = suitCounts.reduce(0, +) / Double(max(suitCounts.count, 1))
+        let variance = suitCounts.reduce(0) { acc, value in
+            let d = value - meanCount
+            return acc + d * d
+        } / Double(max(suitCounts.count, 1))
+        let suitStdDev = sqrt(variance)
+        samples.append(InsightSample(
+            key: "trump_distribution_balance",
+            category: "trump",
+            value: suitStdDev,
+            direction: .low,
+            text: "Atouts très équilibrés sur la partie."
+        ))
+        samples.append(InsightSample(
+            key: "trump_distribution_unbalance",
+            category: "trump",
+            value: suitStdDev,
+            direction: .high,
+            text: "Atouts très déséquilibrés (dominance nette d'une couleur)."
+        ))
 
         if let bestPlayerSuit = trumpSelectionsByPlayer
             .flatMap({ pair in pair.value.map { (pair.key, $0.key, $0.value) } })
@@ -666,6 +889,14 @@ extension GameManager {
                 direction: .high,
                 text: "\(displayName(for: maxConcentration.playerId)) a choisi \(displayName(for: maxConcentration.suit)) avec une forte concentration (\(Int((maxConcentration.concentration * 100).rounded()))%)."
             ))
+        } else {
+            samples.append(InsightSample(
+                key: "trump_chooser_suit_concentration_max",
+                category: "trump",
+                value: 0,
+                direction: .high,
+                text: "Aucune donnée de concentration d'atout disponible."
+            ))
         }
         if let minConcentration = trumpChoiceConcentrationRecords.min(by: { $0.concentration < $1.concentration }) {
             samples.append(InsightSample(
@@ -674,6 +905,14 @@ extension GameManager {
                 value: minConcentration.concentration,
                 direction: .low,
                 text: "\(displayName(for: minConcentration.playerId)) a choisi \(displayName(for: minConcentration.suit)) avec peu de cartes (\(Int((minConcentration.concentration * 100).rounded()))%)."
+            ))
+        } else {
+            samples.append(InsightSample(
+                key: "trump_chooser_suit_concentration_min",
+                category: "trump",
+                value: 0,
+                direction: .low,
+                text: "Aucune donnée de concentration d'atout disponible."
             ))
         }
 
@@ -874,4 +1113,3 @@ extension GameManager {
         return "\(round - 2)"
     }
 }
-
