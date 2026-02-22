@@ -88,6 +88,18 @@ class GameManager: ObservableObject {
     @Published var showSubtleFailureEffect: Bool = false
     @Published var effectPosition: CGPoint = .zero
     @Published var hasDeferredStartNewGame: Bool = false
+    @Published var latestGameInsightFacts: [GameInsightFact] = []
+    @Published var latestGameAllInsightFacts: [GameInsightFact] = []
+    var trumpSelectionsBySuit: [Suit: Int] = [:]
+    var trumpSelectionsByPlayer: [PlayerId: [Suit: Int]] = [:]
+    var trumpCancelCount: Int = 0
+    var roundFirstBettor: [Int: PlayerId] = [:]
+    var roundDifficultyByPlayer: [Int: [PlayerId: Double]] = [:]
+    var roundMidCardDensityByPlayer: [Int: [PlayerId: Double]] = [:]
+    var randomBetByPlayer: [PlayerId: Int] = [:]
+    var randomBetRecordedByRound: Set<Int> = []
+    var trumpChoiceConcentrationRecords: [TrumpChoiceConcentrationRecord] = []
+    var trackedDifficultyRounds: Set<Int> = []
     
     @Published var dealerPosition: CGPoint = .zero
     @Published var playersScoresUpdated: Bool = false
@@ -201,6 +213,7 @@ class GameManager: ObservableObject {
     // MARK: - Game Logic Functions
     
     func newGame() {
+        resetInsightsTrackingForNewGame()
         gameState.round = 0
         gameState.players.forEach {
             $0.scores.removeAll()
@@ -273,6 +286,9 @@ class GameManager: ObservableObject {
         
         // Set the first player to play
         updatePlayerPlayOrder(startingWith: .dealer(gameState.dealer!))
+        if let firstBettor = gameState.playOrder.first {
+            roundFirstBettor[gameState.round] = firstBettor
+        }
         
         // Update the players' positions
         if gameState.round > 1 {
@@ -452,6 +468,7 @@ class GameManager: ObservableObject {
     
     func updateGameStateWithBet(from playerId: PlayerId, with bet: Int) {
         let player = gameState.getPlayer(by: playerId)
+        let isFirstBetForRound = player.announcedTricks.count < gameState.round
 
         if bet == -1 {
             // Player cancelled his bet
@@ -477,6 +494,9 @@ class GameManager: ObservableObject {
             player.madeTricks.append(0)
         } else {
             player.announcedTricks[gameState.round - 1] = bet
+        }
+        if isFirstBetForRound {
+            trackRandomBetIfEligible(playerId: playerId, round: gameState.round)
         }
         logger.log("Player \(playerId) announced tricks: \(player.announcedTricks)")
 
@@ -757,6 +777,23 @@ class GameManager: ObservableObject {
                          logger.log("Score data that failed to save: \(newScore)")
                     }
                 }
+
+                #if DEBUG
+                await MainActor.run {
+                    logger.log("DEBUG mode: skipping insights summary persistence.")
+                }
+                #else
+                do {
+                    try await publishInsightsSummaryForCurrentGame()
+                    await MainActor.run {
+                        logger.log("Insights summary saved successfully for game ending \(newScore.date)")
+                    }
+                } catch {
+                    await MainActor.run {
+                        logger.log("Failed to save insights summary: \(error.localizedDescription)")
+                    }
+                }
+                #endif
             }
         }
     }
@@ -1008,6 +1045,18 @@ class GameManager: ObservableObject {
         self.amHonked = false
         self.autoPilot = false
         self.lastGameWinner = nil
+        self.latestGameInsightFacts = []
+        self.latestGameAllInsightFacts = []
+        self.trumpSelectionsBySuit = [:]
+        self.trumpSelectionsByPlayer = [:]
+        self.trumpCancelCount = 0
+        self.roundFirstBettor = [:]
+        self.roundDifficultyByPlayer = [:]
+        self.roundMidCardDensityByPlayer = [:]
+        self.randomBetByPlayer = [:]
+        self.randomBetRecordedByRound = []
+        self.trumpChoiceConcentrationRecords = []
+        self.trackedDifficultyRounds = []
         self.isGameSetup = false
 
         // Bootstrap: Identify local player immediately so updatePlayerReferences works.

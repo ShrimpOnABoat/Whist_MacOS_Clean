@@ -18,6 +18,9 @@ class FirebaseService {
     private let currentGameActionDocumentId = "current"
     private let gameActionsCollection = "gameActions"
     private let scoresCollection = "scores"
+    private let latestGameInsightsCollection = "latestGameInsights"
+    private let gameInsightsHistoryCollection = "gameInsightsHistory"
+    private let gameInsightMetricStatsCollection = "gameInsightMetricStats"
     private let countersCollection = "counters"
     private let counterId = "counter"
     
@@ -279,6 +282,50 @@ class FirebaseService {
         } while lastSnapshot != nil
         
         logger.log("Successfully deleted \(count) scores from collection \(scoresCollection).")
+    }
+
+    // MARK: - Game Insights
+
+    func saveLatestGameInsights(_ summary: GameInsightsSummary) async throws {
+        try db.collection(latestGameInsightsCollection)
+            .document("latest")
+            .setData(from: summary)
+        try db.collection(gameInsightsHistoryCollection)
+            .document(summary.id)
+            .setData(from: summary)
+    }
+
+    func loadLatestGameInsights() async throws -> GameInsightsSummary? {
+        let snapshot = try await db.collection(latestGameInsightsCollection)
+            .document("latest")
+            .getDocument()
+        guard snapshot.exists else { return nil }
+        return try snapshot.data(as: GameInsightsSummary.self)
+    }
+
+    func loadGameInsightMetricStats(keys: [String]) async throws -> [String: GameInsightMetricStats] {
+        guard !keys.isEmpty else { return [:] }
+        var result: [String: GameInsightMetricStats] = [:]
+        let uniqueKeys = Array(Set(keys))
+        for key in uniqueKeys {
+            let snap = try await db.collection(gameInsightMetricStatsCollection)
+                .document(key)
+                .getDocument()
+            if snap.exists, let stats = try? snap.data(as: GameInsightMetricStats.self) {
+                result[key] = stats
+            }
+        }
+        return result
+    }
+
+    func saveGameInsightMetricStats(_ statsByKey: [String: GameInsightMetricStats]) async throws {
+        guard !statsByKey.isEmpty else { return }
+        let batch = db.batch()
+        for (key, stats) in statsByKey {
+            let ref = db.collection(gameInsightMetricStatsCollection).document(key)
+            try batch.setData(from: stats, forDocument: ref)
+        }
+        try await batch.commit()
     }
     
     // FirebaseService

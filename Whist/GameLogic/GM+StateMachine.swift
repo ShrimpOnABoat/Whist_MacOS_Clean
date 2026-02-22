@@ -129,6 +129,9 @@ extension GameManager {
             
         case .waitingToStart:
             setPlayerState(to: .startNewGame)
+            Task {
+                await self.refreshLatestGameInsights()
+            }
             
         case .newGame:
             setPlayerState(to: .idle)
@@ -261,6 +264,7 @@ extension GameManager {
             setPlayerState(to: .discarding)
             
         case .bidding:
+            trackRoundDifficultySnapshotIfNeeded()
             if gameState.round < 4 {
                 if isLocalPlayerTurnToBet() {
                     logger.log("local player must bet < 4")

@@ -194,9 +194,9 @@ struct GameView: View {
                                         ZStack {
                                             if !(gameManager.showLastTrick && gameManager.gameState.currentPhase == .playingTricks) {
                                                 if gameManager.gameState.currentPhase != .choosingTrump {
-                                                    TableView(gameState: gameManager.gameState, dynamicSize: dynamicSize)
+                                                    TableView(gameState: gameManager.gameState, dynamicSize: dynamicSize, showRoundHistory: $showRoundHistory)
                                                 } else {
-                                                    TableView(gameState: gameManager.gameState, dynamicSize: dynamicSize, mode: .trumps)
+                                                    TableView(gameState: gameManager.gameState, dynamicSize: dynamicSize, showRoundHistory: $showRoundHistory, mode: .trumps)
                                                 }
                                             } else {
                                                 // Display a background for the last trick
@@ -546,4 +546,3 @@ struct GridOverlay: View {
         }
     }
 }
-

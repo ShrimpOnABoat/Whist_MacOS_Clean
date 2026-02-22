@@ -10,7 +10,9 @@ import SwiftUI
 struct TableView: View {
     @EnvironmentObject var gameManager: GameManager
     @ObservedObject var gameState: GameState
+    @Binding var showRoundHistory: Bool
     var dynamicSize: DynamicSize
+    @State private var showAllInsights: Bool = false
     
     enum Mode {
         case tricks, trumps
@@ -18,36 +20,164 @@ struct TableView: View {
     
     let mode: Mode
 
-    init(gameState: GameState, dynamicSize: DynamicSize, mode: Mode = .tricks) {
+    init(gameState: GameState, dynamicSize: DynamicSize, showRoundHistory: Binding<Bool> = .constant(false), mode: Mode = .tricks) {
         self.gameState = gameState
         self.mode = mode
         self.dynamicSize = dynamicSize
+        self._showRoundHistory = showRoundHistory
     }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 if gameManager.gameState.currentPhase == .waitingToStart {
-                    if let winner = gameManager.lastGameWinner {
+                    if gameManager.isFirstGame {
                         VStack {
-                            Text("🎉🎊 BRAVO \(winner.rawValue.uppercased()) 🎊🎉")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(.yellow)
-                                .shadow(radius: 5)
-                                .multilineTextAlignment(.center)
-                                .padding(.bottom, 8)
-                            
-                            Text("Tu as dominé cette partie avec brio! 🏆")
-                                .font(.system(size: 18))
-                                .foregroundColor(.white)
+                            Button(action: {
+                                gameManager.startNewGameAction()
+                            }) {
+                                Text("Nouvelle partie")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 14)
+                                    .background(Color.green.opacity(0.9))
+                                    .foregroundColor(.white)
+                                    .cornerRadius(9)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 9)
+                                            .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+                                    )
+                            }
+                            .buttonStyle(PlainButtonStyle())
                         }
-                        .padding()
+                    } else {
+                        VStack(spacing: 14) {
+                            if let winner = gameManager.lastGameWinner {
+                                Text("🎉🎊 BRAVO \(winner.rawValue.uppercased()) 🎊🎉")
+                                    .font(.system(size: 30, weight: .bold))
+                                    .foregroundColor(.yellow)
+                                    .shadow(radius: 5)
+                                    .multilineTextAlignment(.center)
+                            } else {
+                                Text("🃏 Nouvelle partie")
+                                    .font(.system(size: 30, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .shadow(radius: 5)
+                                    .multilineTextAlignment(.center)
+                            }
+
+                            Text(dynamicHeaderSentence())
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+
+                            let topFacts = Array(gameManager.latestGameInsightFacts.prefix(3))
+                            if !topFacts.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Faits marquants")
+                                        .font(.system(size: 17, weight: .bold))
+                                        .foregroundColor(.white)
+                                    ForEach(Array(topFacts.enumerated()), id: \.element.id) { index, fact in
+                                        Text("\(index + 1). \(fact.text)")
+                                            .font(.system(size: 15))
+                                            .foregroundColor(.white.opacity(0.96))
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                                .frame(maxWidth: 540, alignment: .leading)
+                            }
+
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    showRoundHistory = true
+                                }) {
+                                    Text("Détails")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 14)
+                                        .background(Color.white.opacity(0.18))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(9)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 9)
+                                                .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
+                                        )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+
+                                Button(action: {
+                                    gameManager.startNewGameAction()
+                                }) {
+                                    Text(gameManager.hasDeferredStartNewGame ? "Rejoindre la partie" : "Nouvelle partie")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 14)
+                                        .background(Color.green.opacity(0.9))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(9)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 9)
+                                                .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+                                        )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+
+                                Button(action: {
+                                    showAllInsights = true
+                                }) {
+                                    Text("Tous les insights")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 14)
+                                        .background(Color.white.opacity(0.18))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(9)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 9)
+                                                .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
+                                        )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .frame(maxWidth: 660)
+                        .padding(.vertical, 20)
+                        .padding(.horizontal, 22)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: 16)
                                 .fill(Color.green.opacity(0.8))
-                                .shadow(radius: 10)
+                                .shadow(radius: 12)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.5), lineWidth: 1.2)
                         )
                         .transition(.scale)
+                        .sheet(isPresented: $showAllInsights) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Tous les insights")
+                                    .font(.title2.bold())
+                                    .foregroundColor(.white)
+                                if gameManager.latestGameAllInsightFacts.isEmpty {
+                                    Text("Aucun insight disponible pour cette partie.")
+                                        .foregroundColor(.white.opacity(0.9))
+                                } else {
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            ForEach(Array(gameManager.latestGameAllInsightFacts.prefix(20).enumerated()), id: \.element.id) { index, fact in
+                                                Text("\(index + 1). \(fact.text)")
+                                                    .foregroundColor(.white.opacity(0.95))
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(20)
+                            .frame(minWidth: 600, minHeight: 500)
+                            .background(Color.black.opacity(0.85))
+                        }
                     }
                 } else {
                     switch mode {
@@ -117,5 +247,15 @@ struct TableView: View {
             }
         }
         .frame(alignment: .center)
+    }
+
+    private func dynamicHeaderSentence() -> String {
+        if let firstFact = gameManager.latestGameInsightFacts.first {
+            return firstFact.text
+        }
+        if let winner = gameManager.lastGameWinner {
+            return "\(winner.rawValue.uppercased()) a dominé cette partie avec brio."
+        }
+        return "Prenez le temps de revoir la partie, puis rejoignez quand vous êtes prêt."
     }
 }

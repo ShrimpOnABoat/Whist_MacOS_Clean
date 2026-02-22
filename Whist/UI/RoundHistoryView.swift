@@ -12,13 +12,23 @@ struct RoundHistoryView: View {
     @Binding var isPresented: Bool
     
     var body: some View {
+        let completedRounds = gameManager.gameState.players
+            .map { $0.scores.count }
+            .min() ?? 0
+        let maxRound = max(0, min(completedRounds, 12))
         VStack(spacing: 10) {
             ScrollView {
                 VStack(spacing: 5) {
                     headerRow()
-                    
-                    ForEach(1...min(gameManager.gameState.round - 1, 12), id: \.self) { round in
-                        roundRow(round: round)
+
+                    if maxRound == 0 {
+                        Text("Aucun tour joué pour l'instant.")
+                            .foregroundColor(.secondary)
+                            .padding(.top, 12)
+                    } else {
+                        ForEach(1...maxRound, id: \.self) { round in
+                            roundRow(round: round)
+                        }
                     }
                 }
                 .padding()

@@ -360,25 +360,7 @@ struct PlayerView: View {
                 .animation(.easeInOut, value: selectedCount)
             }
         } else if gameManager.gameState.currentPhase == .waitingToStart && player.tablePosition == .local {
-            VStack {
-                Button(action: {
-                    gameManager.startNewGameAction()
-                }) {
-                    Text(gameManager.hasDeferredStartNewGame ? "Rejoindre la partie" : "Nouvelle partie")
-                        .font(.system(size: dynamicSize.stateTextSize))
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(5)
-                        .shadow(radius: 5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(Color.white, lineWidth: 2)
-                        )
-                }
-                .buttonStyle(HoverMoveUpButtonStyle(isActive: true))
-            }
+            EmptyView()
         } else {
             let stateMessage: String = {
                 if player.tablePosition != .local {

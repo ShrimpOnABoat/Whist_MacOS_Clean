@@ -130,6 +130,7 @@ extension GameManager {
         case .choseTrump:
             logger.log("Received trump")
             if let trumpCard = try? JSONDecoder().decode(Card.self, from: action.payload) {
+                self.trackTrumpSelection(playerId: action.playerId, suit: trumpCard.suit)
                 self.updateGameStateWithTrump(from: action.playerId, with: trumpCard)
             } else {
                 logger.log("Failed to decode trump suit.")
@@ -137,6 +138,7 @@ extension GameManager {
             
         case .cancelTrump:
             logger.log("Received cancellation of trump suit")
+            self.trackTrumpCancellation()
             self.updateGameStateWithTrumpCancellation()
             
         case .discard:
