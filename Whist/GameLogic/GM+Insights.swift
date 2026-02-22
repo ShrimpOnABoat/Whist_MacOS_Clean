@@ -464,13 +464,15 @@ extension GameManager {
                 }
                 gameTotalBetDeltaAbs += absDelta
             }
+            // Adjust the displayed round index: show 2 less than the actual, but never below 1
+            let adjustedMaxDeltaRound = max(roundTotalBetDeltaAbsMaxRound - 2, 1)
             let maxDeltaText: String
             if roundTotalBetDeltaSignedAtMax > 0 {
-                maxDeltaText = "Vous avez annoncé \(roundTotalBetDeltaAbsMax) de trop au tour \(roundTotalBetDeltaAbsMaxRound)."
+                maxDeltaText = "Vous avez annoncé \(roundTotalBetDeltaAbsMax) de trop au tour \(adjustedMaxDeltaRound)."
             } else if roundTotalBetDeltaSignedAtMax < 0 {
-                maxDeltaText = "Vous avez annoncé \(roundTotalBetDeltaAbsMax) de moins au tour \(roundTotalBetDeltaAbsMaxRound)."
+                maxDeltaText = "Vous avez annoncé \(roundTotalBetDeltaAbsMax) de moins au tour \(adjustedMaxDeltaRound)."
             } else {
-                maxDeltaText = "Vous avez annoncé le bon nombre de plis au tour \(roundTotalBetDeltaAbsMaxRound)."
+                maxDeltaText = "Vous avez annoncé le bon nombre de plis au tour \(adjustedMaxDeltaRound)."
             }
             samples.append(InsightSample(
                 key: "round_total_bet_delta_abs_max",
