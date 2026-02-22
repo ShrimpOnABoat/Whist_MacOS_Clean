@@ -779,8 +779,15 @@ class GameManager: ObservableObject {
                 }
 
                 #if DEBUG
-                await MainActor.run {
-                    logger.log("DEBUG mode: skipping insights summary persistence.")
+                do {
+                    try await publishInsightsSummaryForCurrentGame(shouldPersist: false)
+                    await MainActor.run {
+                        logger.log("DEBUG mode: insights computed locally (no persistence).")
+                    }
+                } catch {
+                    await MainActor.run {
+                        logger.log("DEBUG mode: failed to compute local insights: \(error.localizedDescription)")
+                    }
                 }
                 #else
                 do {

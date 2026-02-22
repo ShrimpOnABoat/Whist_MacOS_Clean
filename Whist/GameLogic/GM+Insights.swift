@@ -180,17 +180,29 @@ extension GameManager {
             latestGameInsightFacts = loaded?.topFacts ?? []
             latestGameAllInsightFacts = loaded?.allFacts ?? loaded?.topFacts ?? []
         } else {
+            #if DEBUG
+            // In debug runs, insights may be computed locally without persistence.
+            // Keep current values instead of blanking the end-of-game UI.
+            if !latestGameInsightFacts.isEmpty || !latestGameAllInsightFacts.isEmpty {
+                return
+            }
+            #endif
             latestGameInsightFacts = []
             latestGameAllInsightFacts = []
         }
     }
 
-    func publishInsightsSummaryForCurrentGame() async throws {
+    func publishInsightsSummaryForCurrentGame(shouldPersist: Bool = true) async throws {
         let samples = buildInsightSamples()
         guard !samples.isEmpty else { return }
 
-        let keys = Array(Set(samples.map(\.key)))
-        let existingStats = try await FirebaseService.shared.loadGameInsightMetricStats(keys: keys)
+        let existingStats: [String: GameInsightMetricStats]
+        if shouldPersist {
+            let keys = Array(Set(samples.map(\.key)))
+            existingStats = try await FirebaseService.shared.loadGameInsightMetricStats(keys: keys)
+        } else {
+            existingStats = [:]
+        }
 
         let rankedFacts = rankFacts(from: samples, using: existingStats)
         let topFacts = selectTopFacts(from: rankedFacts, maxCount: 3)
@@ -204,6 +216,11 @@ extension GameManager {
             metrics: metrics
         )
 
+        latestGameInsightFacts = topFacts
+        latestGameAllInsightFacts = rankedFacts
+
+        guard shouldPersist else { return }
+
         var updatedStats = existingStats
         for sample in samples {
             let current = updatedStats[sample.key] ?? GameInsightMetricStats(key: sample.key)
@@ -212,8 +229,6 @@ extension GameManager {
 
         try await FirebaseService.shared.saveLatestGameInsights(summary)
         try await FirebaseService.shared.saveGameInsightMetricStats(updatedStats)
-        latestGameInsightFacts = topFacts
-        latestGameAllInsightFacts = rankedFacts
     }
 
     private func buildInsightSamples() -> [InsightSample] {
