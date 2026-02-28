@@ -32,6 +32,3 @@ Whist/Secrets.plist
 # macOS Finder junk
 .DS_Store
 **/.DS_Store
-
-# Claude
-.claude

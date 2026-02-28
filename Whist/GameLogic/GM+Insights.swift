@@ -16,6 +16,15 @@ struct GameInsightFact: Codable, Identifiable {
     let text: String
 }
 
+struct GameInsightsSummary: Codable {
+    let id: String
+    let createdAt: Date
+    let winner: PlayerId?
+    let topFacts: [GameInsightFact]
+    let allFacts: [GameInsightFact]?
+    let metrics: [String: Double]
+}
+
 struct TrumpChoiceConcentrationRecord {
     let round: Int
     let playerId: PlayerId
@@ -157,19 +166,56 @@ extension GameManager {
     }
 
     func refreshLatestGameInsights() async {
-        // Insights are now computed locally at game end and kept in memory for the current game only.
-        // Do not blank the UI here.
+        var loaded: GameInsightsSummary?
+        for attempt in 0..<3 {
+            loaded = try? await FirebaseService.shared.loadLatestGameInsights()
+            if loaded != nil { break }
+            if attempt < 2 {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        }
+        if let expectedWinner = lastGameWinner,
+           let loadedWinner = loaded?.winner,
+           loadedWinner == expectedWinner {
+            latestGameInsightFacts = loaded?.topFacts ?? []
+            latestGameAllInsightFacts = loaded?.allFacts ?? loaded?.topFacts ?? []
+        } else {
+            #if DEBUG
+            // In debug runs, insights may be computed locally without persistence.
+            // Keep current values instead of blanking the end-of-game UI.
+            if !latestGameInsightFacts.isEmpty || !latestGameAllInsightFacts.isEmpty {
+                return
+            }
+            #endif
+            latestGameInsightFacts = []
+            latestGameAllInsightFacts = []
+        }
     }
 
     func publishInsightsSummaryForCurrentGame(shouldPersist: Bool = true) async throws {
         let samples = buildInsightSamples()
         guard !samples.isEmpty else { return }
 
-        let keys = Array(Set(samples.map(\.key)))
-        let existingStats = try await FirebaseService.shared.loadGameInsightMetricStats(keys: keys)
+        let existingStats: [String: GameInsightMetricStats]
+        if shouldPersist {
+            let keys = Array(Set(samples.map(\.key)))
+            existingStats = try await FirebaseService.shared.loadGameInsightMetricStats(keys: keys)
+        } else {
+            existingStats = [:]
+        }
 
         let rankedFacts = rankFacts(from: samples, using: existingStats)
         let topFacts = selectTopFacts(from: rankedFacts, maxCount: 3)
+        let metrics = Dictionary(uniqueKeysWithValues: samples.map { ($0.key, $0.value) })
+        let summary = GameInsightsSummary(
+            id: UUID().uuidString,
+            createdAt: Date(),
+            winner: lastGameWinner,
+            topFacts: topFacts,
+            allFacts: rankedFacts,
+            metrics: metrics
+        )
+
         latestGameInsightFacts = topFacts
         latestGameAllInsightFacts = rankedFacts
 
@@ -181,6 +227,7 @@ extension GameManager {
             updatedStats[sample.key] = current.updating(with: sample.value)
         }
 
+        try await FirebaseService.shared.saveLatestGameInsights(summary)
         try await FirebaseService.shared.saveGameInsightMetricStats(updatedStats)
     }
 

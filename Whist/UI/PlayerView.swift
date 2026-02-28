@@ -15,6 +15,7 @@ struct PlayerView: View {
     let dynamicSize: DynamicSize
     let isDealer: Bool
     
+    @State private var dealerFrame: CGRect = .zero
     @State private var selectedCardIDs: Set<String> = []
     @State private var scoreChange: Int? = nil
     @State private var isBlinking = false
@@ -90,7 +91,16 @@ struct PlayerView: View {
                         Circle()
                             .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
                             .opacity(0)
-                            .overlay(dealerAnchor)
+                            .overlay(
+                                GeometryReader { proxy in
+                                    Color.clear
+                                        .onAppear {
+                                            let frame = proxy.frame(in: .named("contentArea"))
+                                            logger.log("Captured frame: \(frame)")
+                                            gameManager.updateDealerFrame(playerId: player.id, frame: frame)
+                                        }
+                                }
+                            )
                     }
                 }
             }
@@ -130,7 +140,13 @@ struct PlayerView: View {
                                     Circle()
                                         .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
                                         .opacity(0)
-                                        .overlay(dealerAnchor)
+                                        .background(GeometryReader { proxy in
+                                            Color.clear
+                                                .onAppear {
+                                                    let frame = proxy.frame(in: .named("contentArea"))
+                                                    gameManager.updateDealerFrame(playerId: player.id, frame: frame)
+                                                }
+                                        })
                                 }
                             }
                             .frame(maxHeight: .infinity, alignment: .top)
@@ -165,7 +181,13 @@ struct PlayerView: View {
                                     Circle()
                                         .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
                                         .opacity(0)
-                                        .overlay(dealerAnchor)
+                                        .background(GeometryReader { proxy in
+                                            Color.clear
+                                                .onAppear {
+                                                    let frame = proxy.frame(in: .named("contentArea"))
+                                                    gameManager.updateDealerFrame(playerId: player.id, frame: frame)
+                                                }
+                                        })
                                 }
                             }
                             .frame(maxHeight: .infinity, alignment: .top)
@@ -182,19 +204,6 @@ struct PlayerView: View {
                     }
                 }
             }
-    }
-
-    private var dealerAnchor: some View {
-        GeometryReader { proxy in
-            let frame = proxy.frame(in: .named("contentArea"))
-            Color.clear
-                .onAppear {
-                    gameManager.updateDealerFrame(playerId: player.id, frame: frame)
-                }
-                .onChange(of: frame) { updatedFrame in
-                    gameManager.updateDealerFrame(playerId: player.id, frame: updatedFrame)
-                }
-        }
     }
     
     // MARK: - Player Info

@@ -41,7 +41,7 @@ struct TableView: View {
                                 gameManager.startNewGameAction()
                             }) {
                                 Text("Nouvelle partie")
-                                    .font(.system(size: scaledFont(18, min: 14, max: 32), weight: .semibold))
+                                    .font(.system(size: 18, weight: .semibold))
                                     .padding(.vertical, 8)
                                     .padding(.horizontal, 14)
                                     .background(Color.green.opacity(0.9))
@@ -58,20 +58,20 @@ struct TableView: View {
                         VStack(spacing: 14) {
                             if let winner = gameManager.lastGameWinner {
                                 Text("🎉🎊 BRAVO \(winner.rawValue.uppercased()) 🎊🎉")
-                                    .font(.system(size: scaledFont(30, min: 22, max: 52), weight: .bold))
+                                    .font(.system(size: 30, weight: .bold))
                                     .foregroundColor(.yellow)
                                     .shadow(radius: 5)
                                     .multilineTextAlignment(.center)
                             } else {
                                 Text("🃏 Nouvelle partie")
-                                    .font(.system(size: scaledFont(30, min: 22, max: 52), weight: .bold))
+                                    .font(.system(size: 30, weight: .bold))
                                     .foregroundColor(.white)
                                     .shadow(radius: 5)
                                     .multilineTextAlignment(.center)
                             }
 
                             Text(dynamicHeaderSentence())
-                                .font(.system(size: scaledFont(18, min: 14, max: 30), weight: .semibold))
+                                .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 8)
@@ -80,11 +80,11 @@ struct TableView: View {
                             if !topFacts.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Faits marquants")
-                                        .font(.system(size: scaledFont(15, min: 13, max: 28), weight: .bold))
+                                        .font(.system(size: 17, weight: .bold))
                                         .foregroundColor(.white)
                                     ForEach(Array(topFacts.enumerated()), id: \.element.id) { index, fact in
                                         Text("\(index + 1). \(fact.text)")
-                                            .font(.system(size: scaledFont(12, min: 12, max: 24)))
+                                            .font(.system(size: 15))
                                             .foregroundColor(.white.opacity(0.96))
                                             .multilineTextAlignment(.leading)
                                     }
@@ -97,7 +97,7 @@ struct TableView: View {
                                     showRoundHistory = true
                                 }) {
                                     Text("Détails")
-                                        .font(.system(size: scaledFont(15, min: 12, max: 24), weight: .semibold))
+                                        .font(.system(size: 15, weight: .semibold))
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 14)
                                         .background(Color.white.opacity(0.18))
@@ -114,7 +114,7 @@ struct TableView: View {
                                     gameManager.startNewGameAction()
                                 }) {
                                     Text(gameManager.hasDeferredStartNewGame ? "Rejoindre la partie" : "Nouvelle partie")
-                                        .font(.system(size: scaledFont(15, min: 12, max: 24), weight: .semibold))
+                                        .font(.system(size: 15, weight: .semibold))
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 14)
                                         .background(Color.green.opacity(0.9))
@@ -131,7 +131,7 @@ struct TableView: View {
                                     showAllInsights = true
                                 }) {
                                     Text("Tous les insights")
-                                        .font(.system(size: scaledFont(15, min: 12, max: 24), weight: .semibold))
+                                        .font(.system(size: 15, weight: .semibold))
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 14)
                                         .background(Color.white.opacity(0.18))
@@ -161,18 +161,16 @@ struct TableView: View {
                         .sheet(isPresented: $showAllInsights) {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Tous les insights")
-                                    .font(.system(size: scaledFont(22, min: 18, max: 34), weight: .bold))
+                                    .font(.title2.bold())
                                     .foregroundColor(.white)
                                 if gameManager.latestGameAllInsightFacts.isEmpty {
                                     Text("Aucun insight disponible pour cette partie.")
-                                        .font(.system(size: scaledFont(15, min: 12, max: 24)))
                                         .foregroundColor(.white.opacity(0.9))
                                 } else {
                                     ScrollView {
                                         VStack(alignment: .leading, spacing: 10) {
                                             ForEach(Array(gameManager.latestGameAllInsightFacts.enumerated()), id: \.element.id) { index, fact in
                                                 Text("\(index + 1). \(fact.text)")
-                                                    .font(.system(size: scaledFont(15, min: 12, max: 24)))
                                                     .foregroundColor(.white.opacity(0.95))
                                                     .frame(maxWidth: .infinity, alignment: .leading)
                                             }
@@ -256,20 +254,12 @@ struct TableView: View {
     }
 
     private func dynamicHeaderSentence() -> String {
-//        if let firstFact = gameManager.latestGameInsightFacts.first {
-//            return firstFact.text
-//        }
+        if let firstFact = gameManager.latestGameInsightFacts.first {
+            return firstFact.text
+        }
         if let winner = gameManager.lastGameWinner {
             return "\(winner.rawValue.uppercased()) a dominé cette partie avec brio."
         }
         return "Prenez le temps de revoir la partie, puis rejoignez quand vous êtes prêt."
-    }
-
-    private var uiScale: CGFloat {
-        min(max(dynamicSize.proportion, 0.8), 1.7)
-    }
-
-    private func scaledFont(_ base: CGFloat, min minSize: CGFloat, max maxSize: CGFloat) -> CGFloat {
-        min(max(base * uiScale, minSize), maxSize)
     }
 }
