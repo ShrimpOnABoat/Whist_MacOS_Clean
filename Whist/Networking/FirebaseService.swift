@@ -18,8 +18,6 @@ class FirebaseService {
     private let currentGameActionDocumentId = "current"
     private let gameActionsCollection = "gameActions"
     private let scoresCollection = "scores"
-    private let latestGameInsightsCollection = "latestGameInsights"
-    private let gameInsightsHistoryCollection = "gameInsightsHistory"
     private let gameInsightMetricStatsCollection = "gameInsightMetricStats"
     private let countersCollection = "counters"
     private let counterId = "counter"
@@ -285,23 +283,6 @@ class FirebaseService {
     }
 
     // MARK: - Game Insights
-
-    func saveLatestGameInsights(_ summary: GameInsightsSummary) async throws {
-        try db.collection(latestGameInsightsCollection)
-            .document("latest")
-            .setData(from: summary)
-        try db.collection(gameInsightsHistoryCollection)
-            .document(summary.id)
-            .setData(from: summary)
-    }
-
-    func loadLatestGameInsights() async throws -> GameInsightsSummary? {
-        let snapshot = try await db.collection(latestGameInsightsCollection)
-            .document("latest")
-            .getDocument()
-        guard snapshot.exists else { return nil }
-        return try snapshot.data(as: GameInsightsSummary.self)
-    }
 
     func loadGameInsightMetricStats(keys: [String]) async throws -> [String: GameInsightMetricStats] {
         guard !keys.isEmpty else { return [:] }

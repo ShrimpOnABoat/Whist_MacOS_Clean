@@ -129,9 +129,6 @@ extension GameManager {
             
         case .waitingToStart:
             setPlayerState(to: .startNewGame)
-            Task {
-                await self.refreshLatestGameInsights()
-            }
             
         case .newGame:
             setPlayerState(to: .idle)
@@ -392,8 +389,6 @@ extension GameManager {
             showConfetti.toggle()
             playSound(named: "applaud")
             playSound(named: "confetti")
-            // Show final results and store score
-            saveScore()
             isGameSetup = false // To allow recovery in case of crash
             isFirstGame = false
             guard !isFinalizingGameOver else {
@@ -407,16 +402,21 @@ extension GameManager {
                             self.transition(to: .setPlayOrder)
                         }
 
-                        // Clear shared gameActions only once (authority = toto), and only then move forward.
+                        // Persist results before advancing so the waiting screen can reliably load them.
                         if gameState.localPlayer?.id == .toto {
                             Task { [weak self] in
                                 guard let self = self else { return }
+                                await self.saveScore()
                                 await self.persistence.clearGameActions()
                                 await MainActor.run {
                                     finishGameOverFinalization()
                                 }
                             }
                         } else {
+                            Task { [weak self] in
+                                guard let self = self else { return }
+                                await self.saveScore()
+                            }
                             finishGameOverFinalization()
                         }
         }

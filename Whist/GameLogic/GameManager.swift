@@ -732,77 +732,59 @@ class GameManager: ObservableObject {
     }
     
     // MARK: Save scores
-    func saveScore() {
-        // Update the game's winner
+    func saveScore() async {
         lastGameWinner = gameState.players.first { $0.place == 1 }?.id
-        
-        // Save the score only once
-        if gameState.localPlayer?.id == .toto {
-            // Retrieve players by their ID using the gameState helper.
-            let ggPlayer = gameState.getPlayer(by: .gg)
-            let ddPlayer = gameState.getPlayer(by: .dd)
-            let totoPlayer = gameState.getPlayer(by: .toto)
-            
-            // Get the latest score for each player (defaulting to 0 if not available).
-            let ggScore = ggPlayer.scores.last ?? 0
-            let ddScore = ddPlayer.scores.last ?? 0
-            let totoScore = totoPlayer.scores.last ?? 0
-            
-            // Create a new GameScore instance with current date, scores, and positions.
-            let newScore = GameScore(
-                date: Date(),
-                ggScore: ggScore,
-                ddScore: ddScore,
-                totoScore: totoScore,
-                ggPosition: ggPlayer.place,
-                ddPosition: ddPlayer.place,
-                totoPosition: totoPlayer.place,
-                ggConsecutiveWins: consecutiveWins(by: .gg),
-                ddConsecutiveWins: consecutiveWins(by: .dd),
-                totoConsecutiveWins: consecutiveWins(by: .toto)
-            )
-            
-            // Save the updated scores array.
-            Task {
-                do {
-                    try await ScoresManager.shared.saveScore(newScore)
-                    // Log success on the main thread if necessary, though logger should handle it
-                    await MainActor.run { // Ensure logging happens on main thread if it interacts with UI state implicitly
-                         logger.log("Score saved successfully for game ending \(newScore.date)")
-                    }
-                } catch {
-                     // Handle the error (e.g., display an alert to the user).
-                    await MainActor.run {
-                         logger.log("Failed to save score: \(error.localizedDescription)")
-                         logger.log("Score data that failed to save: \(newScore)")
-                    }
-                }
 
-                #if DEBUG
-                do {
-                    try await publishInsightsSummaryForCurrentGame(shouldPersist: false)
-                    await MainActor.run {
-                        logger.log("DEBUG mode: insights computed locally (no persistence).")
-                    }
-                } catch {
-                    await MainActor.run {
-                        logger.log("DEBUG mode: failed to compute local insights: \(error.localizedDescription)")
-                    }
-                }
-                #else
-                do {
-                    try await publishInsightsSummaryForCurrentGame()
-                    await MainActor.run {
-                        logger.log("Insights summary saved successfully for game ending \(newScore.date)")
-                    }
-                } catch {
-                    await MainActor.run {
-                        logger.log("Failed to save insights summary: \(error.localizedDescription)")
-                    }
-                }
-                #endif
+        do {
+            #if DEBUG
+            try await publishInsightsSummaryForCurrentGame(shouldPersist: false)
+            logger.log("DEBUG mode: insights computed locally (no persistence).")
+            #else
+            try await publishInsightsSummaryForCurrentGame(shouldPersist: gameState.localPlayer?.id == .toto)
+            if gameState.localPlayer?.id == .toto {
+                logger.log("Insights metric stats saved successfully.")
+            } else {
+                logger.log("Insights computed locally from historical stats.")
             }
+            #endif
+        } catch {
+            #if DEBUG
+            logger.log("DEBUG mode: failed to compute local insights: \(error.localizedDescription)")
+            #else
+            logger.log("Failed to compute insights summary: \(error.localizedDescription)")
+            #endif
         }
+
+        #if DEBUG
+        return
+        #else
+        guard gameState.localPlayer?.id == .toto else { return }
+
+        let ggPlayer = gameState.getPlayer(by: .gg)
+        let ddPlayer = gameState.getPlayer(by: .dd)
+        let totoPlayer = gameState.getPlayer(by: .toto)
+
+        let newScore = GameScore(
+            date: Date(),
+            ggScore: ggPlayer.scores.last ?? 0,
+            ddScore: ddPlayer.scores.last ?? 0,
+            totoScore: totoPlayer.scores.last ?? 0,
+            ggPosition: ggPlayer.place,
+            ddPosition: ddPlayer.place,
+            totoPosition: totoPlayer.place,
+            ggConsecutiveWins: consecutiveWins(by: .gg),
+            ddConsecutiveWins: consecutiveWins(by: .dd),
+            totoConsecutiveWins: consecutiveWins(by: .toto)
+        )
+
+        do {
+            try await ScoresManager.shared.saveScore(newScore)
+            logger.log("Score saved successfully for game ending \(newScore.date)")
+        } catch {
+            logger.log("Failed to save score: \(error.localizedDescription)")
+            logger.log("Score data that failed to save: \(newScore)")
+        }
+        #endif
     }
     
     func consecutiveWins(by playerId: PlayerId) -> Int {
