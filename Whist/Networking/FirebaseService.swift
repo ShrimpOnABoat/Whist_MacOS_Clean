@@ -65,27 +65,6 @@ class FirebaseService {
         }
     }
     
-    /// Resets the monotonic action sequence for a given game.
-    /// This should be called right at the start of a new game, before any
-    /// actions are saved. It sets `counters/{gameId}.next` back to 1.
-    /// Uses a transaction so the write is atomic if other clients are around.
-    func resetActionSequence() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            db.runTransaction({ (transaction, errorPointer) -> Any? in
-                let counterRef = self.db.collection(self.countersCollection).document(self.counterId)
-                transaction.setData(["next": NSNumber(value: 1)], forDocument: counterRef, merge: true)
-                return true as NSNumber
-            }, completion: { result, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else {
-                    logger.log("Reset action sequence to 1")
-                    continuation.resume(returning: ())
-                }
-            })
-        }
-    }
-    
     /// Reads the current value of the monotonic action sequence counter from Firestore.
     /// If the document or field is missing, returns 1 as the initial default.
     func getCurrentActionSequence() async throws -> Int {

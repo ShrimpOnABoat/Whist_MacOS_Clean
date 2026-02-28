@@ -34,14 +34,13 @@ class GamePersistence {
         }
     }
 
-    /// Deletes all saved GameAction entries from Firestore and resets the action sequence.
+    /// Deletes all saved GameAction entries from Firestore.
     func clearGameActions() async {
         do {
             try await firebaseService.deleteAllGameActions()
-            try await firebaseService.resetActionSequence()
-            logger.log("Cleared all game actions and reset sequence in Firebase via GamePersistence.")
+            logger.log("Cleared all game actions in Firebase via GamePersistence.")
         } catch {
-            logger.log("Error clearing game actions or resetting sequence in Firebase via GamePersistence: \(error.localizedDescription)")
+            logger.log("Error clearing game actions in Firebase via GamePersistence: \(error.localizedDescription)")
         }
     }
     
