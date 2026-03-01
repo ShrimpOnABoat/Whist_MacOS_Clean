@@ -22,6 +22,14 @@ class FirebaseSignalingManager {
     
     private var listenerRegistrations: [ListenerRegistration] = []
     private let db = Firestore.firestore()
+    private let listenerStateQueue = DispatchQueue(label: "Whist.FirebaseSignalingManager.listener-state")
+    private let iceSendQueue = DispatchQueue(label: "Whist.FirebaseSignalingManager.ice-send")
+    private var lastProcessedOfferByDocId: [String: String] = [:]
+    private var lastProcessedAnswerByDocId: [String: String] = [:]
+    private var processedCandidatesByDocId: [String: Set<String>] = [:]
+    private var pendingIceCandidateStringsByDocId: [String: [String]] = [:]
+    private var iceFlushWorkItemsByDocId: [String: DispatchWorkItem] = [:]
+    private let iceBatchDebounce: TimeInterval = 0.3
     
     var validateSession: ((_ peerId: PlayerId, _ incomingSessionId: String?) -> Bool)?
     
@@ -60,15 +68,10 @@ class FirebaseSignalingManager {
         guard let candidateData = try? JSONEncoder().encode(candidateDict),
               let candidateString = String(data: candidateData, encoding: .utf8) else {
             logger.log("Error encoding ICE candidate to JSON string")
-            //            throw NSError(domain: "FirebaseSignalingManager", code: 2001, userInfo: [NSLocalizedDescriptionKey: "Failed to encode ICE candidate"])
             return
         }
-        
-        let candidateDataForFirestore: [String: Any] = [
-            "iceCandidates": FieldValue.arrayUnion([candidateString])
-        ]
-        logger.logRTC("Firebase [\(docId)]: Sending ICE candidate")
-        try await db.collection("signaling").document(docId).setData(candidateDataForFirestore, merge: true)
+
+        queueIceCandidateString(candidateString, forDocumentId: docId)
     }
     
     private func extractIds(from docId: String) -> (from: PlayerId, to: PlayerId)? {
@@ -84,192 +87,25 @@ class FirebaseSignalingManager {
     func setupFirebaseListeners(localPlayerId: PlayerId) {
         logger.logRTC(" Firebase Listeners: Setting up for \(localPlayerId.rawValue)")
         
-        // Ensure we don't add duplicate listeners if called multiple times
         listenerRegistrations.forEach { $0.remove() }
         listenerRegistrations.removeAll()
-        
-        // Listen for Offers sent TO me
-        let offerListener = listenForOffer(for: localPlayerId) { [weak self] (fromId, sdpString) in
-            guard let self = self else { return }
-            logger.logRTC("Received OFFER from \(fromId.rawValue). Invoking onOfferReceived callback.")
-            let remoteSdp = RTCSessionDescription(type: .offer, sdp: sdpString)
-            self.onOfferReceived?(fromId, remoteSdp)
+        listenerStateQueue.sync {
+            lastProcessedOfferByDocId.removeAll()
+            lastProcessedAnswerByDocId.removeAll()
+            processedCandidatesByDocId.removeAll()
         }
-        listenerRegistrations.append(offerListener)
-        
-        // Listen for Answers sent TO me
-        let answerListener = listenForAnswer(for: localPlayerId) { [weak self] (fromId, sdpString) in
-            guard let self = self else { return }
-            logger.logRTC(" Received ANSWER from \(fromId.rawValue). Invoking onAnswerReceived callback.")
-            let remoteSdp = RTCSessionDescription(type: .answer, sdp: sdpString)
-            self.onAnswerReceived?(fromId, remoteSdp)
+
+        for peerId in PlayerId.allCases where peerId != localPlayerId {
+            let docId = documentName(from: peerId, to: localPlayerId)
+            let listener = db.collection("signaling").document(docId).addSnapshotListener { [weak self] snapshot, error in
+                self?.handleIncomingDocumentSnapshot(snapshot, error: error, from: peerId, to: localPlayerId, docId: docId)
+            }
+            listenerRegistrations.append(listener)
         }
-        listenerRegistrations.append(answerListener)
-        
-        // Listen for ICE Candidates sent TO me
-        let candidateListener = listenForIceCandidates(for: localPlayerId) { [weak self] (fromId, candidate) in
-            guard self != nil else { return }
-            logger.logRTC("Received ICE Candidate from \(fromId.rawValue). Invoking onRemoteIceCandidateReceived callback.")
-            self?.onRemoteIceCandidateReceived?(fromId, candidate)
-        }
-        listenerRegistrations.append(candidateListener)
         
         logger.logRTC(" Firebase Listeners: Setup complete for \(localPlayerId.rawValue)")
     }
-    
-    func listenForOffer(for localPlayerId: PlayerId, handler: @escaping (_ fromId: PlayerId, _ sdp: String) -> Void) -> ListenerRegistration {
-        var lastProcessedOffer: String?
-        
-        return db.collection("signaling").addSnapshotListener { [weak self] querySnapshot, error in
-            guard let self = self, let snapshot = querySnapshot else { return }
-            
-            snapshot.documentChanges.forEach { diff in
-                if diff.type == .added || diff.type == .modified {
-                    let docId = diff.document.documentID
-                    if let ids = self.extractIds(from: docId), ids.to == localPlayerId {
-                        let data = diff.document.data()
-                        
-                        guard let offerSdp = data["offer"] as? String else {
-                            return
-                        }
-                        
-                        // DEDUPLICATION CHECK:
-                        // If the offer SDP hasn't changed since the last update, ignore it.
-                        // This prevents re-triggering "Received OFFER" logic when ICE candidates are added.
-                        if let last = lastProcessedOffer, last == offerSdp {
-                            return
-                        }
-                        
-                        // SESSION CHECK
-                        guard let incomingSessionId = data["sessionId"] as? String else {
-                            logger.logRTC("Offer listener: missing sessionId for doc \(docId). Skipping.")
-                            return
-                        }
-                        logger.logRTC("Offer listener: validating sid \(incomingSessionId) from \(ids.from.rawValue)")
-                        if let validate = self.validateSession, !validate(ids.from, incomingSessionId) {
-                            logger.logRTC("Ignoring OFFER from \(ids.from) due to Session ID mismatch or missing.")
-                            return
-                        }
-                        
-                        logger.logRTC("✅ VALID Session OFFER received from \(ids.from).")
-                        lastProcessedOffer = offerSdp
-                        handler(ids.from, offerSdp)
-                    }
-                }
-            }
-        }
-    }
-    
-    func listenForAnswer(for localPlayerId: PlayerId, handler: @escaping (_ fromId: PlayerId, _ sdp: String) -> Void) -> ListenerRegistration {
-        var lastProcessedAnswer: String?
-        
-        return db.collection("signaling").addSnapshotListener { [weak self] querySnapshot, error in
-            guard let self = self, let snapshot = querySnapshot else { return }
-            
-            snapshot.documentChanges.forEach { diff in
-                // Optional: keep this diagnostic to see full doc content
-                logger.logRTC("diff.document.data(): \(diff.document.data())")
-                
-                if diff.type == .added || diff.type == .modified {
-                    let docId = diff.document.documentID
-                    if let ids = self.extractIds(from: docId), ids.to == localPlayerId {
-                        let data = diff.document.data()
-                        
-                        guard let answerSdp = data["answer"] as? String else {
-                            return
-                        }
-                        
-                        // DEDUPLICATION CHECK:
-                        // If the answer SDP hasn't changed, ignore it.
-                        if let last = lastProcessedAnswer, last == answerSdp {
-                            return
-                        }
-                        
-                        // SESSION CHECK
-                        guard let incomingSessionId = data["sessionId"] as? String else {
-                            logger.logRTC("Answer listener: missing sessionId for doc \(docId). Skipping.")
-                            return
-                        }
-                        logger.logRTC("Answer listener: validating sid \(incomingSessionId) from \(ids.from.rawValue)")
-                        if let validate = self.validateSession, !validate(ids.from, incomingSessionId) {
-                            // Don't log this too loudly or it spams, but useful for debug
-                            // logger.logRTC("Ignoring ANSWER from \(ids.from) - Session Mismatch.")
-                            return
-                        }
-                        
-                        logger.logRTC("✅ VALID Session ANSWER received from \(ids.from).")
-                        lastProcessedAnswer = answerSdp
-                        handler(ids.from, answerSdp)
-                    }
-                }
-            }
-        }
-    }
-    
-    func listenForIceCandidates(for localPlayerId: PlayerId, handler: @escaping (_ fromId: PlayerId, _ candidate: RTCIceCandidate) -> Void) -> ListenerRegistration {
-        var processedCandidatesByDocId = [String: Set<String>]()
-        
-        return db.collection("signaling").addSnapshotListener { [weak self] querySnapshot, error in
-            guard let self = self, let snapshot = querySnapshot else { return }
-            
-            snapshot.documentChanges.forEach { diff in
-                let docId = diff.document.documentID
-                
-                // Clear cache on remove
-                if diff.type == .removed {
-                    processedCandidatesByDocId.removeValue(forKey: docId)
-                    return
-                }
-                
-                if diff.type == .added || diff.type == .modified {
-                    if let ids = self.extractIds(from: docId), ids.to == localPlayerId {
-                        guard let candidateStrings = diff.document.data()["iceCandidates"] as? [String] else { return }
-                        
-                        if processedCandidatesByDocId[docId] == nil { processedCandidatesByDocId[docId] = Set<String>() }
-                        
-                        for candidateString in candidateStrings {
-                            if processedCandidatesByDocId[docId]?.contains(candidateString) == false {
-                                // Decode JSON
-                                if let candidateData = candidateString.data(using: .utf8),
-                                   let json = try? JSONDecoder().decode([String: String].self, from: candidateData) {
-                                    
-                                    // SESSION CHECK FOR ICE
-                                    guard let incomingSid = json["sid"], !incomingSid.isEmpty else {
-                                        logger.logRTC("ICE listener: candidate missing sid for doc \(docId). Skipping candidate.")
-                                        processedCandidatesByDocId[docId]?.insert(candidateString) // avoid reprocessing
-                                        continue
-                                    }
-                                    logger.logRTC("ICE listener: validating sid \(incomingSid) from \(ids.from.rawValue)")
-                                    if let validate = self.validateSession, !validate(ids.from, incomingSid) {
-                                        // Skip this specific candidate, it belongs to an old session
-                                        processedCandidatesByDocId[docId]?.insert(candidateString) // avoid reprocessing
-                                        continue
-                                    }
-                                    
-                                    if let sdp = json["sdp"],
-                                       let sdpMid = json["sdpMid"],
-                                       let idxStr = json["sdpMLineIndex"],
-                                       let idx = Int32(idxStr) {
-                                        let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: idx, sdpMid: sdpMid)
-                                        handler(ids.from, candidate)
-                                        processedCandidatesByDocId[docId]?.insert(candidateString)
-                                    } else {
-                                        // malformed candidate JSON; mark as processed to avoid infinite retries
-                                        processedCandidatesByDocId[docId]?.insert(candidateString)
-                                    }
-                                } else {
-                                    // failed to decode; mark as processed to avoid loops
-                                    processedCandidatesByDocId[docId]?.insert(candidateString)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    
+
     func clearSignalingData(for playerId: String) async throws {
         let signalingRef = db.collection("signaling")
         let batch = db.batch()
@@ -314,5 +150,145 @@ class FirebaseSignalingManager {
     
     deinit {
         listenerRegistrations.forEach { $0.remove() }
+    }
+
+    private func handleIncomingDocumentSnapshot(_ snapshot: DocumentSnapshot?, error: Error?, from fromId: PlayerId, to _: PlayerId, docId: String) {
+        if let error {
+            logger.log("Firebase listener error for \(docId): \(error.localizedDescription)")
+            return
+        }
+
+        guard let snapshot else { return }
+
+        guard snapshot.exists, let data = snapshot.data() else {
+            listenerStateQueue.sync {
+                lastProcessedOfferByDocId.removeValue(forKey: docId)
+                lastProcessedAnswerByDocId.removeValue(forKey: docId)
+                processedCandidatesByDocId.removeValue(forKey: docId)
+            }
+            return
+        }
+
+        processOfferIfNeeded(from: fromId, docId: docId, data: data)
+        processAnswerIfNeeded(from: fromId, docId: docId, data: data)
+        processIceCandidatesIfNeeded(from: fromId, docId: docId, data: data)
+    }
+
+    private func processOfferIfNeeded(from fromId: PlayerId, docId: String, data: [String: Any]) {
+        guard let offerSdp = data["offer"] as? String else { return }
+        guard let incomingSessionId = data["sessionId"] as? String else {
+            logger.logRTC("Offer listener: missing sessionId for doc \(docId). Skipping.")
+            return
+        }
+        guard validateSession?(fromId, incomingSessionId) ?? true else {
+            logger.logRTC("Ignoring OFFER from \(fromId) due to Session ID mismatch or missing.")
+            return
+        }
+
+        let shouldProcess = listenerStateQueue.sync { () -> Bool in
+            if lastProcessedOfferByDocId[docId] == offerSdp { return false }
+            lastProcessedOfferByDocId[docId] = offerSdp
+            return true
+        }
+        guard shouldProcess else { return }
+
+        logger.logRTC("✅ VALID Session OFFER received from \(fromId).")
+        let remoteSdp = RTCSessionDescription(type: .offer, sdp: offerSdp)
+        onOfferReceived?(fromId, remoteSdp)
+    }
+
+    private func processAnswerIfNeeded(from fromId: PlayerId, docId: String, data: [String: Any]) {
+        guard let answerSdp = data["answer"] as? String else { return }
+        guard let incomingSessionId = data["sessionId"] as? String else {
+            logger.logRTC("Answer listener: missing sessionId for doc \(docId). Skipping.")
+            return
+        }
+        guard validateSession?(fromId, incomingSessionId) ?? true else {
+            return
+        }
+
+        let shouldProcess = listenerStateQueue.sync { () -> Bool in
+            if lastProcessedAnswerByDocId[docId] == answerSdp { return false }
+            lastProcessedAnswerByDocId[docId] = answerSdp
+            return true
+        }
+        guard shouldProcess else { return }
+
+        logger.logRTC("✅ VALID Session ANSWER received from \(fromId).")
+        let remoteSdp = RTCSessionDescription(type: .answer, sdp: answerSdp)
+        onAnswerReceived?(fromId, remoteSdp)
+    }
+
+    private func processIceCandidatesIfNeeded(from fromId: PlayerId, docId: String, data: [String: Any]) {
+        guard let candidateStrings = data["iceCandidates"] as? [String], !candidateStrings.isEmpty else { return }
+
+        for candidateString in candidateStrings {
+            let shouldDecode = listenerStateQueue.sync { () -> Bool in
+                var processed = processedCandidatesByDocId[docId] ?? Set<String>()
+                if processed.contains(candidateString) {
+                    return false
+                }
+                processed.insert(candidateString)
+                processedCandidatesByDocId[docId] = processed
+                return true
+            }
+
+            guard shouldDecode else { continue }
+            guard let candidateData = candidateString.data(using: .utf8),
+                  let json = try? JSONDecoder().decode([String: String].self, from: candidateData) else {
+                continue
+            }
+
+            guard let incomingSid = json["sid"], !incomingSid.isEmpty else {
+                logger.logRTC("ICE listener: candidate missing sid for doc \(docId). Skipping candidate.")
+                continue
+            }
+            guard validateSession?(fromId, incomingSid) ?? true else {
+                continue
+            }
+
+            guard let sdp = json["sdp"],
+                  let sdpMid = json["sdpMid"],
+                  let idxStr = json["sdpMLineIndex"],
+                  let idx = Int32(idxStr) else {
+                continue
+            }
+
+            let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: idx, sdpMid: sdpMid)
+            logger.logRTC("Received ICE Candidate from \(fromId.rawValue). Invoking onRemoteIceCandidateReceived callback.")
+            onRemoteIceCandidateReceived?(fromId, candidate)
+        }
+    }
+
+    private func queueIceCandidateString(_ candidateString: String, forDocumentId docId: String) {
+        iceSendQueue.async {
+            self.pendingIceCandidateStringsByDocId[docId, default: []].append(candidateString)
+            self.iceFlushWorkItemsByDocId[docId]?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.flushIceCandidateBatch(forDocumentId: docId)
+            }
+            self.iceFlushWorkItemsByDocId[docId] = workItem
+            self.iceSendQueue.asyncAfter(deadline: .now() + self.iceBatchDebounce, execute: workItem)
+        }
+    }
+
+    private func flushIceCandidateBatch(forDocumentId docId: String) {
+        iceFlushWorkItemsByDocId.removeValue(forKey: docId)
+        let candidateStrings = pendingIceCandidateStringsByDocId.removeValue(forKey: docId) ?? []
+
+        guard !candidateStrings.isEmpty else { return }
+
+        Task {
+            do {
+                let candidateDataForFirestore: [String: Any] = [
+                    "iceCandidates": FieldValue.arrayUnion(candidateStrings)
+                ]
+                logger.logRTC("Firebase [\(docId)]: Sending \(candidateStrings.count) ICE candidate(s)")
+                try await db.collection("signaling").document(docId).setData(candidateDataForFirestore, merge: true)
+            } catch {
+                logger.log("Firebase [\(docId)]: Failed to send batched ICE candidates: \(error.localizedDescription)")
+            }
+        }
     }
 }

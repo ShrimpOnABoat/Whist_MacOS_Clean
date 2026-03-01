@@ -52,7 +52,10 @@ class GameManager: ObservableObject {
     var networkingStarted: Bool = false
     var connectionAttemptTimers: [PlayerId: Timer] = [:]
     var iceDisconnectionTimers: [PlayerId: Timer] = [:]
+    var p2pReconnectRetryCounts: [PlayerId: Int] = [:]
     let iceDisconnectionRecoveryTimeout: TimeInterval = 10.0
+    let maxP2PReconnectAttempts: Int = 5
+    let baseP2PReconnectDelay: TimeInterval = 1.0
     #if DEBUG
     let offerWaitTimeout: TimeInterval = 5.0 // Time to wait for an offer if I'm an answerer
     let answerWaitTimeout: TimeInterval = 5.0 // Time to wait for an answer if I'm an offerer

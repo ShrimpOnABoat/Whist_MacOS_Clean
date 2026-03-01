@@ -11,17 +11,16 @@ import WebRTC
 class P2PConnectionManager: NSObject {
     static let shared = P2PConnectionManager()
 
-    // CHANGE: Rename dataChannels to outgoingDataChannels for clarity
+    private let stateQueue = DispatchQueue(label: "Whist.P2PConnectionManager.state")
     private var outgoingDataChannels: [PlayerId: RTCDataChannel] = [:]
-    // ADD: Dictionary to map incoming data channels to their peer ID
     private var incomingDataChannelsMap: [RTCDataChannel: PlayerId] = [:]
-    private var remoteCandidates: [PlayerId: [RTCIceCandidate]] = [:]
-    private var pendingIceCandidates: [PlayerId: [RTCIceCandidate]] = [:]
-    // Queue of unsent messages for each peer. Messages are flushed when the
-    // corresponding data channel becomes available.
+    private var peerIdByConnectionId: [ObjectIdentifier: PlayerId] = [:]
+    private var remoteCandidatesAwaitingDescription: [PlayerId: [RTCIceCandidate]] = [:]
+    private var earlyRemoteCandidates: [PlayerId: [RTCIceCandidate]] = [:]
     private var messageQueues: [PlayerId: [String]] = [:]
+    private var pendingLocalIceCandidates: [PlayerId: [RTCIceCandidate]] = [:]
     
-    var peerConnections: [PlayerId: RTCPeerConnection] = [:]
+    private var peerConnections: [PlayerId: RTCPeerConnection] = [:]
     var onMessageReceived: ((PlayerId, String) -> Void)?
     var onConnectionEstablished: ((PlayerId) -> Void)?
     var onIceCandidateGenerated: ((PlayerId, RTCIceCandidate) -> Void)?
@@ -93,9 +92,8 @@ class P2PConnectionManager: NSObject {
     /// Creates or returns an existing RTCPeerConnection for the given peerId,
     /// sets this class as its delegate, and initializes a data channel.
     func makePeerConnection(for peerId: PlayerId) -> RTCPeerConnection {
-        if let pc = peerConnections[peerId] {
-             // Ensure an outgoing data channel exists if the connection already exists
-             if outgoingDataChannels[peerId] == nil, let pc = peerConnections[peerId] {
+        if let pc = stateQueue.sync(execute: { peerConnections[peerId] }) {
+             if stateQueue.sync(execute: { outgoingDataChannels[peerId] == nil }) {
                  createAndStoreOutgoingDataChannel(for: peerId, on: pc)
              }
             return pc
@@ -103,20 +101,22 @@ class P2PConnectionManager: NSObject {
         guard let pc = factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
             logger.fatalErrorAndLog("P2PConnectionManager: failed to create RTCPeerConnection")
         }
-        peerConnections[peerId] = pc
-        // Create and store the outgoing data channel
+        stateQueue.sync {
+            peerConnections[peerId] = pc
+            peerIdByConnectionId[ObjectIdentifier(pc)] = peerId
+        }
         createAndStoreOutgoingDataChannel(for: peerId, on: pc)
         return pc
     }
 
-    // ADD: Helper function to create and store the outgoing data channel
     private func createAndStoreOutgoingDataChannel(for peerId: PlayerId, on pc: RTCPeerConnection) {
          let dataChannelConfig = RTCDataChannelConfiguration()
          dataChannelConfig.isOrdered = true
-         // Use the peerId (recipient) as the label for the outgoing channel
          if let channel = pc.dataChannel(forLabel: peerId.rawValue, configuration: dataChannelConfig) {
              channel.delegate = self // Also set delegate for outgoing channel state changes
-             outgoingDataChannels[peerId] = channel // Store in outgoing map
+             stateQueue.sync {
+                 outgoingDataChannels[peerId] = channel
+             }
              logger.logRTC("Created and stored outgoing data channel labeled '\(peerId.rawValue)' for peer \(peerId.rawValue)")
          } else {
              logger.log("Error: Failed to create outgoing data channel for \(peerId.rawValue)")
@@ -130,14 +130,24 @@ class P2PConnectionManager: NSObject {
     deinit { cleanup() }
 
     func cleanup() {
-        // Close both outgoing and incoming channels
-        outgoingDataChannels.values.forEach { $0.close() }
-        incomingDataChannelsMap.keys.forEach { $0.close() } // Close incoming channels
-        peerConnections.values.forEach { $0.close() }
-        outgoingDataChannels.removeAll()
-        incomingDataChannelsMap.removeAll() // Clear incoming map
-        peerConnections.removeAll()
-        remoteCandidates.removeAll()
+        let channelsAndConnections = stateQueue.sync {
+            let outgoing = Array(outgoingDataChannels.values)
+            let incoming = Array(incomingDataChannelsMap.keys)
+            let connections = Array(peerConnections.values)
+            outgoingDataChannels.removeAll()
+            incomingDataChannelsMap.removeAll()
+            peerConnections.removeAll()
+            peerIdByConnectionId.removeAll()
+            remoteCandidatesAwaitingDescription.removeAll()
+            earlyRemoteCandidates.removeAll()
+            pendingLocalIceCandidates.removeAll()
+            messageQueues.removeAll()
+            return (outgoing, incoming, connections)
+        }
+
+        channelsAndConnections.0.forEach { $0.close() }
+        channelsAndConnections.1.forEach { $0.close() }
+        channelsAndConnections.2.forEach { $0.close() }
     }
 
     func createOffer(to peerId: PlayerId, completion: @escaping (PlayerId, Result<RTCSessionDescription, Error>) -> Void) {
@@ -195,6 +205,7 @@ class P2PConnectionManager: NSObject {
                  completion(peerId, .failure(error))
                  return
              }
+             strongSelf.applyBufferedRemoteCandidates(for: peerId, on: connection)
              logger.logRTC("P2PCM: createAnswer: Remote description (offer) SET SUCCESSFULLY for \(peerId.rawValue). Now creating actual answer SDP.")
 
              // Now create the answer
@@ -231,7 +242,7 @@ class P2PConnectionManager: NSObject {
     }
 
     func setRemoteDescription(for peerId: PlayerId, _ sdp: RTCSessionDescription, completion: @escaping (Error?) -> Void) {
-        let pc = peerConnections[peerId] ?? makePeerConnection(for: peerId)
+        let pc = existingPeerConnection(for: peerId) ?? makePeerConnection(for: peerId)
 
         pc.setRemoteDescription(sdp) { [weak self] error in
             guard let self = self else { return }
@@ -242,36 +253,21 @@ class P2PConnectionManager: NSObject {
                 return
             }
              logger.logRTC("Successfully set remote description for \(peerId). Type: \(sdp.type.rawValue)")
-
-
-            // Apply any stored remote candidates once remote description is set
-            // Ensure this doesn't conflict with ICE candidate handling elsewhere
-            if let candidates = self.remoteCandidates[peerId], !candidates.isEmpty {
-                logger.logRTC("Applying \(candidates.count) stored remote ICE candidates for \(peerId).")
-                for candidate in candidates {
-                    pc.add(candidate) { error in
-                        if let error = error {
-                            logger.log("Error adding stored ICE candidate for \(peerId): \(error)")
-                        } else {
-                            logger.logRTC("Successfully added stored ICE candidate for \(peerId).")
-                        }
-                    }
-                }
-                 self.remoteCandidates.removeValue(forKey: peerId) // Clear applied candidates
-            }
+            self.applyBufferedRemoteCandidates(for: peerId, on: pc)
             completion(nil)
         }
     }
 
     func addIceCandidate(_ candidate: RTCIceCandidate, for peerId: PlayerId, completion: ((Error?) -> Void)? = nil) {
-        guard let pc = peerConnections[peerId] else {
-             logger.logRTC("addIceCandidate: No peer connection found for \(peerId). Storing candidate.")
-             pendingIceCandidates[peerId, default: []].append(candidate) // Store candidate if PC doesn't exist yet
+        guard let pc = existingPeerConnection(for: peerId) else {
+             logger.logRTC("addIceCandidate: No peer connection found for \(peerId). Buffering remote candidate.")
+             stateQueue.sync {
+                 earlyRemoteCandidates[peerId, default: []].append(candidate)
+             }
              completion?(nil)
              return
         }
 
-        // Check remote description state before adding candidate
         if pc.remoteDescription != nil {
              logger.logRTC("addIceCandidate: Remote description exists for \(peerId). Adding candidate immediately.")
             pc.add(candidate) { error in
@@ -283,28 +279,34 @@ class P2PConnectionManager: NSObject {
                 }
             }
         } else {
-             logger.logRTC("addIceCandidate: Remote description not set yet for \(peerId). Storing candidate in remoteCandidates.")
-             // Store in remoteCandidates to be applied when setRemoteDescription completes
-            remoteCandidates[peerId, default: []].append(candidate)
+             logger.logRTC("addIceCandidate: Remote description not set yet for \(peerId). Buffering remote candidate.")
+            stateQueue.sync {
+                remoteCandidatesAwaitingDescription[peerId, default: []].append(candidate)
+            }
             completion?(nil)
         }
     }
 
      func flushPendingIce(for peerId: PlayerId) {
-         guard let _ = peerConnections[peerId], let pending = pendingIceCandidates[peerId], !pending.isEmpty else { return }
+         let pending = stateQueue.sync { pendingLocalIceCandidates.removeValue(forKey: peerId) ?? [] }
+         guard !pending.isEmpty else { return }
          logger.logRTC("Flushing \(pending.count) pending *local* ICE candidates for \(peerId).")
          for candidate in pending {
-             // Send pending local candidates via signaling
              onIceCandidateGenerated?(peerId, candidate)
          }
-         pendingIceCandidates[peerId]?.removeAll() // Clear
     }
 
     func sendMessage(_ message: String) -> Bool {
         let buffer = RTCDataBuffer(data: message.data(using: .utf8)!, isBinary: false)
+        let channels = stateQueue.sync { outgoingDataChannels }
+        guard !channels.isEmpty else {
+            logger.log("No data channels available, cannot send message")
+            return false
+        }
+
         var allSent = true
         
-        for (peerId, channel) in outgoingDataChannels {
+        for (peerId, channel) in channels {
             if channel.readyState == .open {
                 #if DEBUG
                 let delay = Double.random(in: 0.1...0.8) // Simulate 100ms to 800ms delay
@@ -312,7 +314,9 @@ class P2PConnectionManager: NSObject {
                     let sent = channel.sendData(buffer)
                     if !sent {
                         logger.log("Simulated lag: Failed to send message to \(peerId)")
-                        self.messageQueues[peerId, default: []].append(message)
+                        self.stateQueue.async {
+                            self.messageQueues[peerId, default: []].append(message)
+                        }
                     } else {
                         logger.logRTC("Simulated lag: Message sent to \(peerId) after \(Int(delay * 1000))ms")
                     }
@@ -321,7 +325,9 @@ class P2PConnectionManager: NSObject {
                 let sent = channel.sendData(buffer)
                 if !sent {
                     logger.log("Failed to send message to \(peerId)")
-                    self.messageQueues[peerId, default: []].append(message)
+                    stateQueue.sync {
+                        self.messageQueues[peerId, default: []].append(message)
+                    }
                     allSent = false
                 } else {
                     logger.logRTC("Message sent to \(peerId) on channel \(channel)")
@@ -329,7 +335,9 @@ class P2PConnectionManager: NSObject {
                 #endif
             } else {
                 logger.log("Data channel to \(peerId) not open, queueing message")
-                self.messageQueues[peerId, default: []].append(message)
+                stateQueue.sync {
+                    self.messageQueues[peerId, default: []].append(message)
+                }
                 allSent = false
             }
         }
@@ -338,27 +346,61 @@ class P2PConnectionManager: NSObject {
     
     /// Attempts to send any queued messages for the specified peer.
     private func flushMessageQueue(for peerId: PlayerId) {
-        guard let channel = outgoingDataChannels[peerId], channel.readyState == .open else { return }
-        var queue = messageQueues[peerId] ?? []
+        guard let channel = stateQueue.sync(execute: { outgoingDataChannels[peerId] }), channel.readyState == .open else { return }
+        var queue = stateQueue.sync { messageQueues.removeValue(forKey: peerId) ?? [] }
         while !queue.isEmpty {
             let msg = queue.removeFirst()
             let buffer = RTCDataBuffer(data: msg.data(using: .utf8)!, isBinary: false)
             if !channel.sendData(buffer) {
                 logger.log("Failed to flush queued message to \(peerId)")
-                messageQueues[peerId] = [msg] + queue
+                stateQueue.sync {
+                    messageQueues[peerId] = [msg] + queue
+                }
                 return
             } else {
                 logger.logRTC("Flushed queued message to \(peerId)")
             }
         }
-        messageQueues[peerId] = queue
+    }
+
+    func signalingState(for peerId: PlayerId) -> RTCSignalingState? {
+        existingPeerConnection(for: peerId)?.signalingState
+    }
+
+    private func existingPeerConnection(for peerId: PlayerId) -> RTCPeerConnection? {
+        stateQueue.sync { peerConnections[peerId] }
+    }
+
+    private func peerId(for peerConnection: RTCPeerConnection) -> PlayerId? {
+        stateQueue.sync { peerIdByConnectionId[ObjectIdentifier(peerConnection)] }
+    }
+
+    private func applyBufferedRemoteCandidates(for peerId: PlayerId, on pc: RTCPeerConnection) {
+        let candidates = stateQueue.sync {
+            let early = earlyRemoteCandidates.removeValue(forKey: peerId) ?? []
+            let waiting = remoteCandidatesAwaitingDescription.removeValue(forKey: peerId) ?? []
+            return early + waiting
+        }
+
+        guard !candidates.isEmpty else { return }
+
+        logger.logRTC("Applying \(candidates.count) buffered remote ICE candidates for \(peerId).")
+        for candidate in candidates {
+            pc.add(candidate) { error in
+                if let error = error {
+                    logger.log("Error adding buffered ICE candidate for \(peerId): \(error)")
+                } else {
+                    logger.logRTC("Successfully added buffered ICE candidate for \(peerId).")
+                }
+            }
+        }
     }
 }
 
 extension P2PConnectionManager: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
         logger.logRTC("Signaling state changed: \(stateChanged.rawValue)")
-        if let peerId = peerConnections.first(where: { $0.value == peerConnection })?.key {
+        if let peerId = peerId(for: peerConnection) {
             onSignalingStateChanged?(peerId, stateChanged)
         }
     }
@@ -378,7 +420,7 @@ extension P2PConnectionManager: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         logger.logRTC("ICE connection state changed for PC (\(peerConnection.description)) to: \(newState.rawValue)")
         
-        if let peerId = peerConnections.first(where: { $0.value == peerConnection })?.key {
+        if let peerId = peerId(for: peerConnection) {
             logger.logRTC("P2P Delegate: Matched PC to peerId: \(peerId.rawValue)")
             onIceConnectionStateChanged?(peerId, newState)
 
@@ -411,7 +453,7 @@ extension P2PConnectionManager: RTCPeerConnectionDelegate {
         logger.logRTC(" P2P Delegate: peerConnection(_:didGenerate:) called.")
         logger.logRTC(" P2P Delegate: Candidate SDP: \(candidate.sdp)")
         
-        guard let peerId = peerConnections.first(where: { $0.value == peerConnection })?.key else {
+        guard let peerId = peerId(for: peerConnection) else {
              logger.log(" P2P Delegate: ERROR - Could not find peerId for this peerConnection.")
             return
         }
@@ -423,7 +465,10 @@ extension P2PConnectionManager: RTCPeerConnectionDelegate {
                 onIceCandidateGenerated?(peerId, candidate)
             }
         } else {
-             logger.log(" P2P Delegate: ERROR - onIceCandidateGenerated callback is NIL.")
+             stateQueue.sync {
+                 pendingLocalIceCandidates[peerId, default: []].append(candidate)
+             }
+             logger.log(" P2P Delegate: onIceCandidateGenerated callback is NIL. Buffering local ICE.")
         }
     }
     
@@ -434,18 +479,21 @@ extension P2PConnectionManager: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
         logger.logRTC("Data channel opened with label: \(dataChannel.label)")
         dataChannel.delegate = self
-        // Update the dedicated data channel for the corresponding peerId
-        if let peerId = peerConnections.first(where: { $0.value == peerConnection })?.key {
-            incomingDataChannelsMap[dataChannel] = peerId
+        if let peerId = peerId(for: peerConnection) {
+            stateQueue.sync {
+                incomingDataChannelsMap[dataChannel] = peerId
+            }
             Task { @MainActor in
                 onConnectionEstablished?(peerId)
             }
         }
         
-        for peerConnection in peerConnections {
+        let connections = stateQueue.sync { peerConnections }
+        let outgoingChannels = stateQueue.sync { outgoingDataChannels }
+        for peerConnection in connections {
             logger.logRTC("🍐 Peer \(peerConnection.key) connected to \(peerConnection.value)")
         }
-        for dataChannel in outgoingDataChannels {
+        for dataChannel in outgoingChannels {
             logger.logRTC("🏁 Peer \(dataChannel.key) connected to \(dataChannel.value)")
         }
     }
@@ -458,12 +506,12 @@ extension P2PConnectionManager: RTCDataChannelDelegate {
         switch dataChannel.readyState {
         case .open:
             logger.logRTC("Data channel is open and ready to use")
-            if let peerId = incomingDataChannelsMap[dataChannel] {
+            if let peerId = stateQueue.sync(execute: { incomingDataChannelsMap[dataChannel] }) {
                 Task { @MainActor in
                     onConnectionEstablished?(peerId)
                     flushMessageQueue(for: peerId)
                 }
-            } else if let peerId = outgoingDataChannels.first(where: { $0.value === dataChannel })?.key {
+            } else if let peerId = stateQueue.sync(execute: { outgoingDataChannels.first(where: { $0.value === dataChannel })?.key }) {
                 Task { @MainActor in
                     onConnectionEstablished?(peerId)
                     flushMessageQueue(for: peerId)
@@ -482,7 +530,7 @@ extension P2PConnectionManager: RTCDataChannelDelegate {
     
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
         if !buffer.isBinary, let message = String(data: buffer.data, encoding: .utf8),
-           let peerId = incomingDataChannelsMap[dataChannel] {
+           let peerId = stateQueue.sync(execute: { incomingDataChannelsMap[dataChannel] }) {
             logger.logRTC("Received message from \(peerId): \(message)")
             onMessageReceived?(peerId, message)
         } else if buffer.isBinary {
@@ -493,24 +541,33 @@ extension P2PConnectionManager: RTCDataChannelDelegate {
     }
     
     func closeConnection(for peerId: PlayerId) {
-        if let pc = peerConnections[peerId] {
+        let resources = stateQueue.sync { () -> (RTCPeerConnection?, RTCDataChannel?, [RTCDataChannel]) in
+            let pc = peerConnections.removeValue(forKey: peerId)
+            if let pc {
+                peerIdByConnectionId.removeValue(forKey: ObjectIdentifier(pc))
+            }
+            let outgoing = outgoingDataChannels.removeValue(forKey: peerId)
+            let incoming = incomingDataChannelsMap.filter { $0.value == peerId }.map { $0.key }
+            for channel in incoming {
+                incomingDataChannelsMap.removeValue(forKey: channel)
+            }
+            remoteCandidatesAwaitingDescription.removeValue(forKey: peerId)
+            earlyRemoteCandidates.removeValue(forKey: peerId)
+            pendingLocalIceCandidates.removeValue(forKey: peerId)
+            messageQueues.removeValue(forKey: peerId)
+            return (pc, outgoing, incoming)
+        }
+
+        if let pc = resources.0 {
             pc.close()
-            peerConnections.removeValue(forKey: peerId)
             logger.logRTC("P2P: Closed connection and removed PC for \(peerId.rawValue)")
         }
-        if let dc = outgoingDataChannels[peerId] {
+        if let dc = resources.1 {
             dc.close()
-            outgoingDataChannels.removeValue(forKey: peerId)
         }
-        // Also find and close/remove incoming data channels associated with this peerId
-        let channelsToClose = incomingDataChannelsMap.filter { $0.value == peerId }.map { $0.key }
+        let channelsToClose = resources.2
         for channel in channelsToClose {
             channel.close()
-            incomingDataChannelsMap.removeValue(forKey: channel)
         }
-        
-        remoteCandidates.removeValue(forKey: peerId)
-        pendingIceCandidates.removeValue(forKey: peerId)
-        messageQueues.removeValue(forKey: peerId)
     }
 }
