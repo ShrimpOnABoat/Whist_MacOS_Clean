@@ -141,20 +141,46 @@ class ScoresManager {
 
         let currentMonth = Calendar.current.component(.month, from: Date())
 
+        let gamePoints: (GameScore) -> [String: Int] = { game in
+            if let ggPos = game.ggPosition, let ddPos = game.ddPosition, let totoPos = game.totoPosition {
+                let positions = [("gg", ggPos), ("dd", ddPos), ("toto", totoPos)]
+                let sorted = positions.sorted { $0.1 < $1.1 }
+                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
+                points[sorted[0].0] = 2
+                points[sorted[1].0] = 1
+                return points
+            }
+
+            let scores: [(String, Int)] = [("gg", game.ggScore), ("dd", game.ddScore), ("toto", game.totoScore)]
+            let sorted = scores.sorted { $0.1 > $1.1 }
+
+            if sorted[0].1 == sorted[1].1 && sorted[1].1 == sorted[2].1 {
+                return ["gg": 2, "dd": 2, "toto": 2]
+            } else if sorted[0].1 == sorted[1].1 {
+                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
+                for entry in scores where entry.1 == sorted[0].1 {
+                    points[entry.0] = 2
+                }
+                return points
+            } else if sorted[1].1 == sorted[2].1 {
+                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
+                points[sorted[0].0] = 2
+                points[sorted[1].0] = 1
+                points[sorted[2].0] = 1
+                return points
+            } else {
+                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
+                points[sorted[0].0] = 2
+                points[sorted[1].0] = 1
+                return points
+            }
+        }
+
         let calculatePlayerPoints: ([GameScore]) -> [String: Int] = { games in
             var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
             for game in games {
-                let sortedScores = [
-                    ("gg", game.ggScore),
-                    ("dd", game.ddScore),
-                    ("toto", game.totoScore)
-                ].sorted { $0.1 > $1.1 }
-
-                if sortedScores[0].1 > sortedScores[1].1 {
-                    points[sortedScores[0].0, default: 0] += 2
-                }
-                if sortedScores[1].1 > sortedScores[2].1 {
-                    points[sortedScores[1].0, default: 0] += 1
+                for (player, value) in gamePoints(game) {
+                    points[player, default: 0] += value
                 }
             }
             return points
@@ -385,4 +411,3 @@ class ScoresManager {
         }
     }
 }
-
