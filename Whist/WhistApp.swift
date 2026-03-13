@@ -21,7 +21,13 @@ struct WhistApp: App {
     
     init() {
         // Configure Firebase
+        #if DEBUG
         AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+        logger.log("Firebase App Check configured with debug provider.")
+        #else
+        AppCheck.setAppCheckProviderFactory(DeviceCheckProviderFactory())
+        logger.log("Firebase App Check configured with DeviceCheck provider.")
+        #endif
         FirebaseApp.configure()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             do {
