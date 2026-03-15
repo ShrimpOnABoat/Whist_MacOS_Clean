@@ -252,6 +252,11 @@ extension GameManager {
             logger.log("toState is still nil for \(movingCard.card)")
             return
         }
+
+        guard let movingIndex = movingCards.firstIndex(where: { $0.id == movingCard.id }) else {
+            logger.log("Ignoring duplicate finalizeMove for \(movingCard.card); moving card \(movingCard.id) is no longer active.")
+            return
+        }
         
 //        logger.log("✅ Finalizing move for \(movingCard.card) from \(movingCard.from) to \(movingCard.to)")
         
@@ -303,15 +308,23 @@ extension GameManager {
         cardStates[movingCard.card.id] = toState
         
         // Remove the moving card from movingCards
-        if let index = movingCards.firstIndex(where: { $0.id == movingCard.id }) {
-            movingCards.remove(at: index)
-        }
+        movingCards.remove(at: movingIndex)
         
         // Ensure the batch animation is completed before starting another one
+        guard activeAnimations > 0 else {
+            logger.log("Animation counter was already \(activeAnimations) while finalizing \(movingCard.card). Resetting to 0 and ignoring extra completion.")
+            activeAnimations = 0
+            return
+        }
+
         activeAnimations -= 1
         if activeAnimations == 0 {
 //            logger.log("Finished moving \(movingCard.card), no active animations left.")
-            onBatchAnimationsCompleted[0]?()  // calls the closure we set in beginBatchMove
+            if let batchCompletion = onBatchAnimationsCompleted.first {
+                batchCompletion?()  // calls the closure we set in beginBatchMove
+            } else {
+                logger.log("Animation batch completed with no registered completion callback.")
+            }
             processAnimationQueue()
         } else {
 //            logger.log("Finished moving \(movingCard.card), but \(activeAnimations) animations still active.")

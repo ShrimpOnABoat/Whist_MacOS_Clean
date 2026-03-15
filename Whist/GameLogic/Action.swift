@@ -8,6 +8,13 @@
 import Foundation
 
 struct GameAction: Codable {
+    struct Context: Codable {
+        let round: Int
+        let trickIndex: Int?
+        let turnIndex: Int?
+        let phase: GamePhase?
+    }
+
     enum ActionType: String, Codable {
         case playOrder
         case playCard
@@ -56,24 +63,35 @@ struct GameAction: Codable {
                 return []
             }
         }
+
+        var isDurableOrdered: Bool {
+            switch self {
+            case .sendState, .refreshSession, .amSlowPoke, .honk:
+                return false
+            default:
+                return true
+            }
+        }
     }
     let playerId: PlayerId
     let type: ActionType
     let payload: Data
     let timestamp: TimeInterval
     let sequence: Int
+    let context: Context?
 }
 
 // Example of creating a playCard action
 extension GameAction {
-    static func playCardAction(playerId: PlayerId, card: Card) -> GameAction {
+    static func playCardAction(playerId: PlayerId, card: Card, context: Context? = nil) -> GameAction {
         let payloadData = try! JSONEncoder().encode(card)
         return GameAction(
             playerId: playerId,
             type: .playCard,
             payload: payloadData,
             timestamp: Date().timeIntervalSince1970,
-            sequence: 0
+            sequence: 0,
+            context: context
         )
     }
 }

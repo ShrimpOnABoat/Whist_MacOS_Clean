@@ -13,12 +13,14 @@ class GamePersistence {
         logger.log("GamePersistence initialized for Firebase.")
     }
 
-    func saveGameAction(_ action: GameAction) async {
+    func saveGameAction(_ action: GameAction) async -> Bool {
         do {
             try await firebaseService.saveGameAction(action)
             logger.log("Game action saved successfully to Firebase.")
+            return true
         } catch {
             logger.log("Error saving game action to Firebase: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -38,6 +40,7 @@ class GamePersistence {
     func clearGameActions() async {
         do {
             try await firebaseService.deleteAllGameActions()
+            try await firebaseService.resetActionSequenceCounter()
             logger.log("Cleared all game actions in Firebase via GamePersistence.")
         } catch {
             logger.log("Error clearing game actions in Firebase via GamePersistence: \(error.localizedDescription)")

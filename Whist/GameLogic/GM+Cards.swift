@@ -122,6 +122,7 @@ extension GameManager {
     func dealCards(completion: @escaping () -> Void) {
         logger.debug("♠️♥️♣️♦️ Start dealing cards with deck \(gameState.deck)")
         var cardsToDeal: Int
+        let startedDuringRestore = isRestoring
         
         isDeckReceived = false
         
@@ -179,7 +180,7 @@ extension GameManager {
         let totalCardsToMove = cardsPerPlayer.reduce(0) { $0 + $1.value }
         //        logger.log("dealCards: beginBatchMove(\(totalCardsToMove)), activeAnimations: \(activeAnimations)")
         beginBatchMove(totalCards: totalCardsToMove) {
-            if !self.isRestoring {
+            if !startedDuringRestore {
                 completion()
             }
         }
@@ -226,7 +227,7 @@ extension GameManager {
                 cardsPerPlayer[playerID]! -= 1
                 
                 // Wait for the animation to complete before moving to next card
-                let animationDuration: TimeInterval =  isRestoring ? 0 : 0.5 / Double(max(gameState.round - 2, 1))
+                let animationDuration: TimeInterval = startedDuringRestore ? 0 : 0.5 / Double(max(gameState.round - 2, 1))
                 DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
                     // Move to the next player
                     currentIndex = (currentIndex + 1) % self.gameState.playOrder.count
@@ -248,7 +249,7 @@ extension GameManager {
                             }
                         }
                         self.sortLocalPlayerHand()
-                        if self.isRestoring {
+                        if startedDuringRestore {
                             completion()
                         }
                     } else {
@@ -310,26 +311,12 @@ extension GameManager {
         guard localPlayer.hand.firstIndex(where: { $0 == card }) != nil else {
             logger.fatalErrorAndLog("Error: The card is not in the local player's hand.")
         }
-        
-        // Play the card
-//        logger.log("playCard: beginBatchMove(1), activeAnimations: \(activeAnimations)")
-        beginBatchMove(totalCards: 1) {
-            completion()
-        }
-        moveCard(card, from: .localPlayer, to: .table)
-        
-        // Notify other players about the action
-        sendPlayCardtoPlayers(card)
-        
-        // Set the remaining cards to not playable
-        for card in localPlayer.hand {
-            card.isPlayable = false
-        }
-        
-        sortLocalPlayerHand()
-        
-        logger.log("Card \(card) played by \(localPlayer.username). Updated gameState.table: \(gameState.table)")
-        
+
+        sendPlayCardtoPlayers(card, completion: completion, onFailed: {
+            card.isPlayable = true
+            card.playAnimationType = .normal
+            logger.log("Failed to commit played card \(card). Local state was left unchanged.")
+        })
     }
     
     // MARK: Received played card
@@ -372,6 +359,13 @@ extension GameManager {
             logger.log("Error: Card not found in player's hand.")
             return
         }
+
+        if playerId == gameState.localPlayer?.id {
+            for remainingCard in player.hand {
+                remainingCard.isPlayable = false
+            }
+            sortLocalPlayerHand()
+        }
 //        saveGameState(gameState)
         logger.log("Card \(card) played by \(playerId.rawValue). Updated gameState.table: \(gameState.table)")
     }
@@ -408,6 +402,13 @@ extension GameManager {
     // MARK: assignTricks
     
     func assignTrick(completion: @escaping () -> Void) {
+        normalizeTrickTrackingState()
+
+        guard gameState.currentTrick < gameState.tricksGrabbed.count else {
+            logger.log("Skipping assignTrick because currentTrick \(gameState.currentTrick) is outside tricksGrabbed count \(gameState.tricksGrabbed.count).")
+            return
+        }
+
         guard gameState.tricksGrabbed[gameState.currentTrick] == false else {
             logger.log("Already assigned trick \(gameState.currentTrick).")
             return
@@ -529,56 +530,15 @@ extension GameManager {
     }
     
     func selectTrumpSuit(_ trumpCard: Card, completion: @escaping () -> Void) {
-        // Set the trump suit
-        gameState.trumpSuit = trumpCard.suit
-        
-        // Move the cards back in the deck, the selected one last
-        //        logger.log("selectTrump: beginBatchMove(4), activeAnimations: \(activeAnimations)")
-        beginBatchMove(totalCards: 4) { completion() }
-        for card in gameState.table {
-            if card != trumpCard {
-                card.isFaceDown = true
-                moveCard(card, from: .table, to: .trumpDeck)
-            }
-        }
-        moveCard(trumpCard, from: .table, to: .trumpDeck)
-        
-        // Send other players the chosen trump suit
-        sendTrumpToPlayers(trumpCard)
-//        saveGameState(gameState)
+        sendTrumpToPlayers(trumpCard, completion: completion)
     }
     
     // MARK: discard
     
     func discard(cardsToDiscard: [Card], completion: @escaping () -> Void) {
         guard gameState.currentPhase == .discard else { return }
-        
-        beginBatchMove(totalCards: cardsToDiscard.count) { completion() }
-        for card in cardsToDiscard {
-            card.isFaceDown = true
-            // if player is second, round is 12 and last player needs 2 cards, destination == last player instead of deck
-            var destination: CardPlace = .deck
-            
-            if gameState.localPlayer?.place == 2 && gameState.round == 12 {
-                if Double(gameState.lastPlayer?.scores[safe: gameState.round - 2] ?? 0) <= 0.5 * Double(gameState.localPlayer?.scores[safe: gameState.round - 2] ?? 0) || gameState.lastPlayer?.monthlyLosses ?? 0 > 0 {
-                    switch gameState.lastPlayer?.tablePosition {
-                    case .left:
-                        destination = .leftPlayer
-                    default:
-                        destination = .rightPlayer
-                    }
-                }
-            }
-            moveCard(card, from: .localPlayer, to: destination)
-        }
-        
-        // Send the information to other players
-        sendDiscardedCards(cardsToDiscard)
-        sortLocalPlayerHand()
-        
-        logger.log("Discarded cards: \(cardsToDiscard)")
-        
-        completion()
+
+        sendDiscardedCards(cardsToDiscard, completion: completion)
     }
     
     // MARK: AI functions
@@ -758,4 +718,3 @@ extension GameManager {
         }
     }
 }
-

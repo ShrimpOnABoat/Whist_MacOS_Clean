@@ -39,6 +39,7 @@ class GameManager: ObservableObject {
     var isDeckReady: Bool = false
     var isDeckReceived: Bool = false
     var pendingActions: [GameAction] = []
+    var localActionCompletions: [Int: () -> Void] = [:]
     var activeAnimations = 0
     var onBatchAnimationsCompleted: [(() -> Void)?] = []
     var animationQueue: [(Int, () -> Void)] = []
@@ -179,12 +180,9 @@ class GameManager: ObservableObject {
     }
     
     func setAndSendPlayOrder() { // Only if local player is toto
-        if gameState.playOrder == [] { // first game of the session
-            gameState.playOrder = [.gg, .dd, .toto].shuffled()
-        }
+        let playOrder = gameState.playOrder.isEmpty ? [.gg, .dd, .toto].shuffled() : gameState.playOrder
         logger.log("Sending playOrder to other players!")
-        sendPlayOrderToPlayers(gameState.playOrder)
-        checkAndAdvanceStateIfNeeded()
+        sendPlayOrderToPlayers(playOrder)
     }
     
     // MARK: startNewGame
@@ -195,10 +193,18 @@ class GameManager: ObservableObject {
             return
         }
         if !isFirstGame {
-            persistOrderAndDealer()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let didPersistSessionAnchor = await self.persistOrderAndDealer()
+                guard didPersistSessionAnchor else {
+                    logger.log("Aborting startNewGame because playOrder/dealer could not be persisted.")
+                    return
+                }
+                self.sendStartNewGameAction()
+            }
+            return
         }
         sendStartNewGameAction()
-        startNewGame()
     }
     
     func handleStartNewGameAction(from playerId: PlayerId) {
@@ -301,6 +307,55 @@ class GameManager: ObservableObject {
     
     func updateDealerFrame(playerId: PlayerId, frame: CGRect) {
         dealerPosition = CGPoint(x: frame.midX, y: frame.midY)
+    }
+
+    func expectedTrickCountForCurrentRound() -> Int {
+        guard gameState.round > 0 else { return 0 }
+        return max(gameState.round - 2, 1)
+    }
+
+    func normalizeTrickTrackingState() {
+        let expectedTrickCount = expectedTrickCountForCurrentRound()
+
+        if expectedTrickCount == 0 {
+            if !gameState.tricksGrabbed.isEmpty {
+                logger.log("Clearing trick tracking because there is no active round.")
+                gameState.tricksGrabbed.removeAll()
+            }
+            gameState.currentTrick = 0
+            return
+        }
+
+        if gameState.tricksGrabbed.count < expectedTrickCount {
+            let missingCount = expectedTrickCount - gameState.tricksGrabbed.count
+            logger.log("Extending tricksGrabbed from \(gameState.tricksGrabbed.count) to \(expectedTrickCount)")
+            gameState.tricksGrabbed.append(contentsOf: Array(repeating: false, count: missingCount))
+        } else if gameState.tricksGrabbed.count > expectedTrickCount {
+            logger.log("Trimming tricksGrabbed from \(gameState.tricksGrabbed.count) to \(expectedTrickCount)")
+            gameState.tricksGrabbed = Array(gameState.tricksGrabbed.prefix(expectedTrickCount))
+        }
+
+        if gameState.currentTrick > expectedTrickCount {
+            logger.log("Clamping currentTrick from \(gameState.currentTrick) to completed-trick count \(expectedTrickCount)")
+            gameState.currentTrick = expectedTrickCount
+        }
+
+        if !gameState.table.isEmpty && gameState.currentTrick >= expectedTrickCount {
+            let recoveredTrickIndex = max(expectedTrickCount - 1, 0)
+            logger.log("Adjusting currentTrick from \(gameState.currentTrick) to \(recoveredTrickIndex) because table still contains \(gameState.table.count) cards to assign.")
+            gameState.currentTrick = recoveredTrickIndex
+        }
+    }
+
+    func resetOrderedActionStateForFreshSession() {
+        logger.log("Resetting local ordered action state for a fresh session.")
+        lastAppliedSequence = 0
+        buffered.removeAll()
+        pendingActions.removeAll { $0.type.isDurableOrdered }
+        localActionCompletions.removeAll()
+        catchUpWorkItem?.cancel()
+        catchUpWorkItem = nil
+        canCatchUp = false
     }
     
     func updatePlayerPlayOrder(startingWith condition: StartingCondition) {
@@ -529,22 +584,40 @@ class GameManager: ObservableObject {
     
     func updateGameStateWithTrump(from playerId: PlayerId, with card: Card) {
         logger.debug("Trump card chosen: \(card)")
-        // if restoring and local player chose trump
-        if gameState.localPlayer?.id == playerId && isRestoring {
-            selectTrumpSuit(card) {
-                // hack
-                card.isFaceDown = false
-                self.checkAndAdvanceStateIfNeeded()
-            }
+
+        let trumpCardIds = Set(
+            Suit.allCases.map { "\($0.rawValue)_\(Rank.two.rawValue)" }
+        )
+        let canonicalTrumpOrder: [Card] = [
+            Card(suit: .clubs, rank: .two),
+            Card(suit: .spades, rank: .two),
+            Card(suit: .diamonds, rank: .two),
+            Card(suit: .hearts, rank: .two)
+        ]
+        var orderedTrumpCards: [Card] = []
+        var seenTrumpCardIds = Set<String>()
+
+        for sourceCard in gameState.trumpCards + gameState.table {
+            guard trumpCardIds.contains(sourceCard.id), !seenTrumpCardIds.contains(sourceCard.id) else { continue }
+            orderedTrumpCards.append(sourceCard)
+            seenTrumpCardIds.insert(sourceCard.id)
         }
-        
-        // move the card on top of the trump deck
-        guard let index = gameState.trumpCards.firstIndex(of: card) else {
-            logger.log("Card \(card) not found in trumpCards.")
-            return
+
+        for canonicalCard in canonicalTrumpOrder where !seenTrumpCardIds.contains(canonicalCard.id) {
+            orderedTrumpCards.append(canonicalCard)
+            seenTrumpCardIds.insert(canonicalCard.id)
         }
-        
-        let removedCard = gameState.trumpCards.remove(at: index)
+
+        let chosenIndex = orderedTrumpCards.firstIndex(where: { $0.id == card.id })
+            ?? orderedTrumpCards.indices.first(where: { orderedTrumpCards[$0].suit == card.suit && orderedTrumpCards[$0].rank == card.rank })
+            ?? {
+                let syntheticCard = Card(suit: card.suit, rank: card.rank)
+                orderedTrumpCards.append(syntheticCard)
+                return orderedTrumpCards.count - 1
+            }()
+
+        let removedCard = orderedTrumpCards.remove(at: chosenIndex)
+        gameState.table.removeAll { trumpCardIds.contains($0.id) }
         
         // Put the card face up if second player
         if gameState.localPlayer?.place == 2 {
@@ -564,8 +637,9 @@ class GameManager: ObservableObject {
             playerScore == bestScore) {
             removedCard.isFaceDown = false
         }
-        
-        gameState.trumpCards.append(removedCard)
+
+        orderedTrumpCards.append(removedCard)
+        gameState.trumpCards = orderedTrumpCards
         
         // Set the trump suit
         gameState.trumpSuit = card.suit
@@ -690,48 +764,25 @@ class GameManager: ObservableObject {
         guard let localPlayer = gameState.localPlayer else {
             logger.fatalErrorAndLog("Error: Local player is not defined.")
         }
-        
-        if gameState.round < 4 {
-            showOptions = false
-            logger.log("the optionsView should disappear now.")
+
+        if bet == nil && localPlayer.announcedTricks.count < gameState.round {
+            return
         }
-        
-        if localPlayer.announcedTricks.count == gameState.round {
-            if bet != nil {
-                // player updates his current bet
-                localPlayer.announcedTricks[localPlayer.announcedTricks.count-1] = bet!
-            } else {
-                // Player deselected his bet
-                if localPlayer.announcedTricks.count == gameState.round {
-                    localPlayer.announcedTricks.removeLast()
-                    localPlayer.madeTricks.removeLast()
-                }
-            }
-        } else {
-            guard bet != nil else { return } // in case it was cancelled and the game was restored
-            // first bet for this round
-            localPlayer.announcedTricks.append(bet!)
-            localPlayer.madeTricks.append(0)
-        }
-        
+
         // Notify other players about the action
-        sendBetToPlayers(bet ?? -1)
+        sendBetToPlayers(bet ?? -1, onFailed: {
+            logger.log("Failed to send bet action. Local bet remains uncommitted.")
+        })
     }
     
     // MARK: Cancel Trump Choice
     
     func cancelTrumpChoice() {
-        // Reset trump-related state to cancel the trump choice
-        gameState.trumpSuit = nil
-        gameState.trumpCards.last?.isFaceDown = true
-        
         logger.log("Trump choice cancelled by local player.")
-        
-        // Notify other players about the cancellation
-        sendCancelTrumpChoice()
-        
-        // Advance the game state as needed
-        checkAndAdvanceStateIfNeeded()
+
+        sendCancelTrumpChoice(onFailed: {
+            logger.log("Failed to send cancelTrump action. Trump cancellation was not committed.")
+        })
     }
     
     // MARK: Save scores
@@ -829,10 +880,8 @@ class GameManager: ObservableObject {
     
     // MARK: Save/Load Game Actions
     
-    func saveGameAction(_ action: GameAction) {
-        Task {
-            await persistence.saveGameAction(action)
-        }
+    func saveGameAction(_ action: GameAction) async -> Bool {
+        await persistence.saveGameAction(action)
     }
     
     func clearSavedGameActions() {

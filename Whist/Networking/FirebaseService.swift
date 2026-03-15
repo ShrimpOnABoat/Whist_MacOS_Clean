@@ -174,6 +174,13 @@ class FirebaseService {
         } while lastSnapshot != nil
         logger.log("Successfully deleted \(totalDeleted) game actions from collection \(gameActionsCollection).")
     }
+
+    func resetActionSequenceCounter() async throws {
+        try await db.collection(countersCollection)
+            .document(counterId)
+            .setData(["next": NSNumber(value: 1)], merge: true)
+        logger.log("Successfully reset action sequence counter to 1.")
+    }
     
     // MARK: - GameScore
     

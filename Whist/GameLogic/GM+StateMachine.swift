@@ -218,16 +218,18 @@ extension GameManager {
             // 2) Now branch out whether we do gatherCards + shuffle or not:
             waitForAnimationsToFinish {
                 if isDealer && !self.isRestoring {
-                    self.gatherCards {
-                        self.shuffleCards() {
+                        self.gatherCards {
+                            self.shuffleCards() {
 //                            self.saveGameState(self.gameState)
-                            self.sendDeckToPlayers()
-                            
-                            // 3) Call dealCards, then call our afterDealing function
-                            self.waitForAnimationsToFinish {
-                                self.dealCards {
-                                    afterDealing()
+                            self.sendDeckToPlayers {
+                                // 3) Call dealCards, then call our afterDealing function
+                                self.waitForAnimationsToFinish {
+                                    self.dealCards {
+                                        afterDealing()
+                                    }
                                 }
+                            } onFailed: {
+                                logger.log("Failed to commit sendDeck. Remaining in dealingCards.")
                             }
                         }
                     }
@@ -346,6 +348,27 @@ extension GameManager {
             // Wait a few seconds and grab trick automatically
             // and set the last trick
             // and refresh playOrder
+            normalizeTrickTrackingState()
+            if gameState.currentTrick >= gameState.tricksGrabbed.count {
+                logger.log("Skipping grabTrick because currentTrick \(gameState.currentTrick) is outside tricksGrabbed count \(gameState.tricksGrabbed.count).")
+                isAwaitingActionCompletionDuringRestore = false
+                if isLastTrick() || gameState.currentTrick >= expectedTrickCountForCurrentRound() {
+                    transition(to: .scoring)
+                } else {
+                    transition(to: .playingTricks)
+                }
+                return
+            }
+            if gameState.table.isEmpty {
+                logger.log("Skipping grabTrick because table is already empty.")
+                isAwaitingActionCompletionDuringRestore = false
+                if isLastTrick() || gameState.currentTrick >= expectedTrickCountForCurrentRound() {
+                    transition(to: .scoring)
+                } else {
+                    transition(to: .playingTricks)
+                }
+                return
+            }
             isAwaitingActionCompletionDuringRestore = true
             logger.log("Assigning trick")
             setPlayerState(to: .idle)
@@ -394,31 +417,25 @@ extension GameManager {
             playSound(named: "confetti")
             // Show final results and store score
             saveScore()
-            isGameSetup = false // To allow recovery in case of crash
             isFirstGame = false
             guard !isFinalizingGameOver else {
-                            logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
-                            return
-                        }
-                        isFinalizingGameOver = true
+                logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
+                return
+            }
+            isFinalizingGameOver = true
 
-                        let finishGameOverFinalization: () -> Void = {
-                            self.isFinalizingGameOver = false
-                            self.transition(to: .setPlayOrder)
-                        }
+            let finishGameOverFinalization: () -> Void = {
+                self.gameState.dealer = self.gameState.playOrder.first
+                self.gameState.updatePlayerReferences()
+                self.isFinalizingGameOver = false
+                logger.log("Game-over finalization complete. Returning to waitingToStart.")
+                self.transition(to: .waitingToStart)
+            }
 
-                        // Clear shared gameActions only once (authority = toto), and only then move forward.
-                        if gameState.localPlayer?.id == .toto {
-                            Task { [weak self] in
-                                guard let self = self else { return }
-                                await self.persistence.clearGameActions()
-                                await MainActor.run {
-                                    finishGameOverFinalization()
-                                }
-                            }
-                        } else {
-                            finishGameOverFinalization()
-                        }
+            // Avoid re-entrant transition work inside the same state-machine call.
+            DispatchQueue.main.async {
+                finishGameOverFinalization()
+            }
         }
     }
     
@@ -761,16 +778,41 @@ extension GameManager {
         logger.log("checkState: \(checkState)")
         var atLeastOneActionProcessed = false
         
-        let remainingActions = pendingActions
+        let remainingActions = pendingActions.sorted { lhs, rhs in
+            switch (lhs.type.isDurableOrdered, rhs.type.isDurableOrdered) {
+            case (true, false):
+                return true
+            case (false, true):
+                return false
+            default:
+                return lhs.sequence < rhs.sequence
+            }
+        }
         pendingActions.removeAll()
         
         for action in remainingActions {
-            if isActionValidInCurrentPhase(action.type) {
-                logger.log("Action \(action.type) is valid in current phase, processing it")
+            if action.type.isDurableOrdered && action.sequence != lastAppliedSequence + 1 {
+                logger.log("Action \(action.type) seq \(action.sequence) is waiting for seq \(lastAppliedSequence + 1)")
+                pendingActions.append(action)
+                continue
+            }
+
+            if action.type.isDurableOrdered && shouldIgnoreOrderedAction(action) {
+                lastAppliedSequence = max(lastAppliedSequence, action.sequence)
+                logger.log("Dropping stale ordered action \(action.type) seq \(action.sequence) from pending queue")
+            } else if action.type.isDurableOrdered && shouldDeferOrderedAction(action) {
+                logger.log("Ordered action \(action.type) seq \(action.sequence) is still waiting for runtime state to catch up.")
+                pendingActions.append(action)
+            } else if action.type.isDurableOrdered {
+                logger.log("Processing ordered action \(action.type) seq \(action.sequence) from pending queue")
+                processAction(action)
+                atLeastOneActionProcessed = true
+            } else if isActionValidInCurrentPhase(action.type) {
+                logger.log("Action \(action.type) seq \(action.sequence) is valid in current phase, processing it")
                 processAction(action)
                 atLeastOneActionProcessed = true
             } else {
-                logger.log("Action \(action.type) is NOT valid in current phase (\(gameState.currentPhase)), skipping it")
+                logger.log("Action \(action.type) seq \(action.sequence) is NOT valid in current phase (\(gameState.currentPhase)), skipping it")
                 pendingActions.append(action)  // Re-add invalid actions
             }
         }

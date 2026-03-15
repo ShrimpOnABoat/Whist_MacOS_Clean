@@ -23,6 +23,171 @@ extension Image {
 }
 
 extension GameManager {
+    private enum OrderedActionDisposition {
+        case apply
+        case deferUntilReady(String)
+        case ignoreAsStale(String)
+    }
+
+    private func registerLocalActionCompletion(_ completion: @escaping () -> Void, for sequence: Int) {
+        localActionCompletions[sequence] = completion
+    }
+
+    private func consumeLocalActionCompletion(for sequence: Int) -> (() -> Void) {
+        localActionCompletions.removeValue(forKey: sequence) ?? {}
+    }
+
+    private func processImmediately(_ action: GameAction) {
+        processAction(action)
+        if action.type != .sendState {
+            checkAndAdvanceStateIfNeeded()
+        }
+    }
+
+    private func appendPendingAction(_ action: GameAction) {
+        if action.type.isDurableOrdered,
+           pendingActions.contains(where: { $0.type.isDurableOrdered && $0.sequence == action.sequence }) {
+            logger.log("Ignoring duplicate pending action \(action.type) seq \(action.sequence)")
+            return
+        }
+        pendingActions.append(action)
+    }
+
+    private func makeActionContext(for type: GameAction.ActionType, playerId: PlayerId) -> GameAction.Context? {
+        switch type {
+        case .playCard:
+            return GameAction.Context(
+                round: gameState.round,
+                trickIndex: gameState.currentTrick,
+                turnIndex: gameState.table.count,
+                phase: gameState.currentPhase
+            )
+        case .sendDeck, .discard, .choseBet, .choseTrump, .cancelTrump, .startNewGame, .playOrder, .dealer:
+            return GameAction.Context(
+                round: gameState.round,
+                trickIndex: nil,
+                turnIndex: nil,
+                phase: gameState.currentPhase
+            )
+        default:
+            return nil
+        }
+    }
+
+    private func playCardDisposition(_ action: GameAction) -> OrderedActionDisposition {
+        if let context = action.context {
+            if context.round < gameState.round {
+                return .ignoreAsStale("playCard targets round \(context.round), but local round is \(gameState.round)")
+            }
+            if context.round > gameState.round {
+                return .deferUntilReady("playCard targets future round \(context.round), local round is \(gameState.round)")
+            }
+
+            if let trickIndex = context.trickIndex {
+                if trickIndex < gameState.currentTrick {
+                    return .ignoreAsStale("playCard targets trick \(trickIndex), but local trick is \(gameState.currentTrick)")
+                }
+                if trickIndex > gameState.currentTrick {
+                    return .deferUntilReady("playCard targets future trick \(trickIndex), local trick is \(gameState.currentTrick)")
+                }
+            }
+
+            if let turnIndex = context.turnIndex {
+                let expectedTurnIndex = gameState.table.count
+                if turnIndex < expectedTurnIndex {
+                    return .ignoreAsStale("playCard targets turn \(turnIndex), but local table already contains \(expectedTurnIndex) cards")
+                }
+                if turnIndex > expectedTurnIndex {
+                    return .deferUntilReady("playCard targets future turn \(turnIndex), local table is at turn \(expectedTurnIndex)")
+                }
+            }
+        }
+
+        guard let playerIndex = gameState.playOrder.firstIndex(of: action.playerId) else {
+            return .apply
+        }
+
+        if gameState.currentPhase == .grabTrick || isAwaitingActionCompletionDuringRestore {
+            return .deferUntilReady("currentPhase = \(gameState.currentPhase)")
+        }
+
+        if gameState.table.indices.contains(playerIndex) {
+            return .ignoreAsStale("player \(action.playerId.rawValue) already occupies table slot \(playerIndex)")
+        }
+
+        return .apply
+    }
+
+    private func orderedActionDisposition(for action: GameAction) -> OrderedActionDisposition {
+        switch action.type {
+        case .playCard:
+            return playCardDisposition(action)
+        default:
+            return .apply
+        }
+    }
+
+    func shouldDeferOrderedAction(_ action: GameAction) -> Bool {
+        if case .deferUntilReady = orderedActionDisposition(for: action) {
+            return true
+        }
+        return false
+    }
+
+    func shouldIgnoreOrderedAction(_ action: GameAction) -> Bool {
+        if case .ignoreAsStale = orderedActionDisposition(for: action) {
+            return true
+        }
+        return false
+    }
+
+    private func applyReceivedOrderedAction(_ action: GameAction) {
+        switch orderedActionDisposition(for: action) {
+        case .deferUntilReady(let reason):
+            appendPendingAction(action)
+            logger.log("Deferring ordered action \(action.type) seq \(action.sequence) until runtime state is ready: \(reason)")
+            return
+        case .ignoreAsStale(let reason):
+            lastAppliedSequence = max(lastAppliedSequence, action.sequence)
+            logger.log("Ignoring stale ordered action \(action.type) seq \(action.sequence): \(reason)")
+            return
+        case .apply:
+            break
+        }
+
+        if !self.isActionValidInCurrentPhase(action.type) {
+            logger.log("Applying ordered action \(action.type) seq \(action.sequence) despite currentPhase = \(self.gameState.currentPhase) because sequence order is authoritative.")
+        }
+        processImmediately(action)
+    }
+
+    private func drainBufferedOrderedActions() {
+        while let nextAction = buffered[lastAppliedSequence + 1] {
+            buffered.removeValue(forKey: nextAction.sequence)
+            logger.log("Draining buffered action \(nextAction.type) seq \(nextAction.sequence)")
+            applyReceivedOrderedAction(nextAction)
+        }
+    }
+
+    private func receiveOrderedAction(_ action: GameAction) {
+        if action.sequence <= lastAppliedSequence {
+            logger.log("Ignoring stale/duplicate action \(action.type) seq \(action.sequence); lastAppliedSequence=\(lastAppliedSequence)")
+            return
+        }
+
+        let expectedSequence = lastAppliedSequence + 1
+        if action.sequence > expectedSequence {
+            if buffered[action.sequence] == nil {
+                buffered[action.sequence] = action
+                logger.log("Buffered out-of-order action \(action.type) seq \(action.sequence); expected seq \(expectedSequence)")
+            }
+            scheduleCatchUp(reason: "Gap detected before seq \(action.sequence)")
+            return
+        }
+
+        applyReceivedOrderedAction(action)
+        drainBufferedOrderedActions()
+    }
     
     struct PlayerIdentification: Codable {
         let id: PlayerId
@@ -30,47 +195,80 @@ extension GameManager {
     }
 
     // MARK: - Sequencing helpers
-    private func nextSequence(_ completion: @escaping (Int) -> Void) {
-        Task {
-            let maxRetries = 6
-            var attempt = 0
-            var baseDelay: UInt64 = 100_000_000 // 0.1s in nanoseconds
+    private func nextSequenceValue() async -> Int? {
+        let maxRetries = 6
+        var attempt = 0
+        var baseDelay: UInt64 = 100_000_000 // 0.1s in nanoseconds
 
-            while !Task.isCancelled && attempt < maxRetries {
-                do {
-                    let seq = try await FirebaseService.shared.nextActionSequence()
-                    completion(seq)
-                    return
-                } catch {
-                    attempt += 1
-                    logger.log("Sequence reservation failed (attempt \(attempt)/\(maxRetries)): \(error.localizedDescription)")
+        while !Task.isCancelled && attempt < maxRetries {
+            do {
+                return try await FirebaseService.shared.nextActionSequence()
+            } catch {
+                attempt += 1
+                logger.log("Sequence reservation failed (attempt \(attempt)/\(maxRetries)): \(error.localizedDescription)")
 
-                    if attempt >= maxRetries {
-                        logger.log("Giving up reserving sequence after \(attempt) attempts. Action will not be sent.")
-                        return
-                    }
-
-                    // Exponential backoff with a bit of jitter to avoid stampeding
-                    let jitter: UInt64 = UInt64(Int.random(in: 0...50_000_000)) // up to 50ms
-                    let sleepNs = min(baseDelay + jitter, 2_000_000_000) // cap single wait at 2s
-                    try? await Task.sleep(nanoseconds: sleepNs)
-                    baseDelay = min(baseDelay * 2, 1_000_000_000) // cap base delay growth at 1s
+                if attempt >= maxRetries {
+                    logger.log("Giving up reserving sequence after \(attempt) attempts. Action will not be sent.")
+                    return nil
                 }
+
+                // Exponential backoff with a bit of jitter to avoid stampeding
+                let jitter: UInt64 = UInt64(Int.random(in: 0...50_000_000)) // up to 50ms
+                let sleepNs = min(baseDelay + jitter, 2_000_000_000) // cap single wait at 2s
+                try? await Task.sleep(nanoseconds: sleepNs)
+                baseDelay = min(baseDelay * 2, 1_000_000_000) // cap base delay growth at 1s
             }
         }
+
+        return nil
     }
 
-    private func buildActionWithSequence(type: GameAction.ActionType, payload: Data, playerId: PlayerId, completion: @escaping (GameAction) -> Void) {
+    private func buildTransientAction(type: GameAction.ActionType, payload: Data, playerId: PlayerId) -> GameAction? {
+        guard !isRestoring else { return nil }
+        return GameAction(
+            playerId: playerId,
+            type: type,
+            payload: payload,
+            timestamp: Date().timeIntervalSince1970,
+            sequence: 0,
+            context: makeActionContext(for: type, playerId: playerId)
+        )
+    }
+
+    private func buildActionWithSequence(type: GameAction.ActionType, payload: Data, playerId: PlayerId) async -> GameAction? {
+        guard !isRestoring else { return nil }
+        guard let seq = await nextSequenceValue() else { return nil }
+        return GameAction(
+            playerId: playerId,
+            type: type,
+            payload: payload,
+            timestamp: Date().timeIntervalSince1970,
+            sequence: seq,
+            context: makeActionContext(for: type, playerId: playerId)
+        )
+    }
+
+    private func buildActionWithSequence(type: GameAction.ActionType, payload: Data, playerId: PlayerId, onFailed: (() -> Void)? = nil, completion: @escaping (GameAction) -> Void) {
         guard !isRestoring else { return }
-        nextSequence { seq in
+        Task {
+            guard let seq = await nextSequenceValue() else {
+                await MainActor.run {
+                    logger.log("Failed to reserve sequence for \(type).")
+                    onFailed?()
+                }
+                return
+            }
             let action = GameAction(
                 playerId: playerId,
                 type: type,
                 payload: payload,
                 timestamp: Date().timeIntervalSince1970,
-                sequence: seq
+                sequence: seq,
+                context: self.makeActionContext(for: type, playerId: playerId)
             )
-            completion(action)
+            await MainActor.run {
+                completion(action)
+            }
         }
     }
 
@@ -79,16 +277,13 @@ extension GameManager {
     func handleReceivedAction(_ action: GameAction) {
         logger.log("Handling action \(action.type) from \(action.playerId)")
         DispatchQueue.main.async {
-            // Check if the action is valid for the current phase
-            if self.isActionValidInCurrentPhase(action.type) {
-                self.processAction(action)
-                if action.type != .sendState {
-                    self.checkAndAdvanceStateIfNeeded()
-                }
+            if action.type.isDurableOrdered {
+                self.receiveOrderedAction(action)
+            } else if self.isActionValidInCurrentPhase(action.type) {
+                self.processImmediately(action)
             } else {
-                // Store the action for later
-                self.pendingActions.append(action)
-                logger.log("Stored action \(action.type) from \(action.playerId) for later because currentPhase = \(self.gameState.currentPhase)")
+                self.appendPendingAction(action)
+                logger.log("Stored transient action \(action.type) from \(action.playerId) for later because currentPhase = \(self.gameState.currentPhase)")
             }
         }
     }
@@ -96,8 +291,10 @@ extension GameManager {
     func processAction(_ action: GameAction) {
         logger.log("Processing action \(action.type) from player \(action.playerId)...")
         
-        lastAppliedSequence = max(action.sequence, lastAppliedSequence)
-        logger.log("lastAppliedSequence is now: \(lastAppliedSequence)")
+        if action.type.isDurableOrdered {
+            lastAppliedSequence = max(action.sequence, lastAppliedSequence)
+            logger.log("lastAppliedSequence is now: \(lastAppliedSequence)")
+        }
         
         switch action.type {
         case .playOrder:
@@ -112,9 +309,7 @@ extension GameManager {
                 logger.log("Failed to decode played card.")
                 return
             }
-            self.updateGameStateWithPlayedCard(from: action.playerId, with: card) {
-                return
-            }
+            self.updateGameStateWithPlayedCard(from: action.playerId, with: card, completion: consumeLocalActionCompletion(for: action.sequence))
             
         case .sendDeck:
             logger.log("Received deck from \(action.playerId).")
@@ -132,6 +327,7 @@ extension GameManager {
             if let trumpCard = try? JSONDecoder().decode(Card.self, from: action.payload) {
                 self.trackTrumpSelection(playerId: action.playerId, suit: trumpCard.suit)
                 self.updateGameStateWithTrump(from: action.playerId, with: trumpCard)
+                consumeLocalActionCompletion(for: action.sequence)()
             } else {
                 logger.log("Failed to decode trump suit.")
             }
@@ -144,7 +340,7 @@ extension GameManager {
         case .discard:
             logger.log("Received discard")
             if let discardedCards = try? JSONDecoder().decode([Card].self, from: action.payload) {
-                self.updateGameStateWithDiscardedCards(from: action.playerId, with: discardedCards) {}
+                self.updateGameStateWithDiscardedCards(from: action.playerId, with: discardedCards, completion: consumeLocalActionCompletion(for: action.sequence))
             } else {
                 logger.log("Failed to decode discarded cards.")
             }
@@ -186,12 +382,14 @@ extension GameManager {
     }
     
     // MARK: - Send data
-    func sendPlayOrderToPlayers(_ playOrder: [PlayerId]) {
+    func sendPlayOrderToPlayers(_ playOrder: [PlayerId], onCommitted: (() -> Void)? = nil) {
         guard let localPlayerID = gameState.localPlayer?.id, localPlayerID == .toto else { return }
 
         if let playOrderData = try? JSONEncoder().encode(playOrder) {
-            buildActionWithSequence(type: .playOrder, payload: playOrderData, playerId: localPlayerID) { action in
-                self.persistAndSend(action)
+            buildActionWithSequence(type: .playOrder, payload: playOrderData, playerId: localPlayerID, onFailed: {
+                logger.log("Unable to build playOrder action. New game setup will not proceed.")
+            }) { action in
+                self.persistAndSend(action, onCommitted: onCommitted)
             }
         } else {
             logger.log("Error: Failed to encode the play order")
@@ -199,7 +397,7 @@ extension GameManager {
     }
 
     
-    func sendDeckToPlayers() {
+    func sendDeckToPlayers(onCommitted: (() -> Void)? = nil, onFailed: (() -> Void)? = nil) {
         logger.log("Sending deck to players: \(gameState.deck)")
         // Ensure localPlayer is defined
         guard let localPlayer = gameState.localPlayer else {
@@ -209,16 +407,17 @@ extension GameManager {
         
         // Encode the filtered deck and create the action
         if let deckData = try? JSONEncoder().encode(gameState.deck) {
-            buildActionWithSequence(type: .sendDeck, payload: deckData, playerId: localPlayer.id) { action in
-                self.persistAndSend(action)
+            buildActionWithSequence(type: .sendDeck, payload: deckData, playerId: localPlayer.id, onFailed: onFailed) { action in
+                self.persistAndSend(action, onCommitted: onCommitted)
             }
         } else {
             logger.log("Error: Failed to encode the deck cards")
+            onFailed?()
         }
     }
 
     
-    func sendPlayCardtoPlayers(_ card: Card) {
+    func sendPlayCardtoPlayers(_ card: Card, completion: @escaping () -> Void, onFailed: (() -> Void)? = nil) {
         logger.log("Sending play card \(card) to players")
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
@@ -226,15 +425,20 @@ extension GameManager {
         }
         
         if let cardData = try? JSONEncoder().encode(card) {
-            buildActionWithSequence(type: .playCard, payload: cardData, playerId: localPlayer.id) { action in
-                self.persistAndSend(action)
+            buildActionWithSequence(type: .playCard, payload: cardData, playerId: localPlayer.id, onFailed: onFailed) { action in
+                self.registerLocalActionCompletion(completion, for: action.sequence)
+                self.persistAndSend(action, onFailed: {
+                    self.localActionCompletions.removeValue(forKey: action.sequence)
+                    onFailed?()
+                })
             }
         } else {
             logger.log("Error: Failed to encode the card")
+            onFailed?()
         }
     }
     
-    func sendBetToPlayers(_ bet: Int) {
+    func sendBetToPlayers(_ bet: Int, onFailed: (() -> Void)? = nil) {
         logger.log("Sending bet \(bet) to players")
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
@@ -242,15 +446,16 @@ extension GameManager {
         }
         
         if let betData = try? JSONEncoder().encode(bet) {
-            buildActionWithSequence(type: .choseBet, payload: betData, playerId: localPlayer.id) { action in
-                self.persistAndSend(action)
+            buildActionWithSequence(type: .choseBet, payload: betData, playerId: localPlayer.id, onFailed: onFailed) { action in
+                self.persistAndSend(action, onFailed: onFailed)
             }
         } else {
             logger.log("Error: Failed to encode the bet")
+            onFailed?()
         }
     }
     
-    func sendTrumpToPlayers(_ trump: Card) {
+    func sendTrumpToPlayers(_ trump: Card, completion: @escaping () -> Void, onFailed: (() -> Void)? = nil) {
         logger.log("Sending trump \(trump) to players")
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
@@ -258,15 +463,20 @@ extension GameManager {
         }
         
         if let trumpData = try? JSONEncoder().encode(trump) {
-            buildActionWithSequence(type: .choseTrump, payload: trumpData, playerId: localPlayer.id) { action in
-                self.persistAndSend(action)
+            buildActionWithSequence(type: .choseTrump, payload: trumpData, playerId: localPlayer.id, onFailed: onFailed) { action in
+                self.registerLocalActionCompletion(completion, for: action.sequence)
+                self.persistAndSend(action, onFailed: {
+                    self.localActionCompletions.removeValue(forKey: action.sequence)
+                    onFailed?()
+                })
             }
         } else {
             logger.log("Error: Failed to encode the trump card")
+            onFailed?()
         }
     }
     
-    func sendDiscardedCards(_ discardedCards: [Card]) {
+    func sendDiscardedCards(_ discardedCards: [Card], completion: @escaping () -> Void, onFailed: (() -> Void)? = nil) {
         logger.log("Sending discarded cards \(discardedCards) to players")
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
@@ -274,11 +484,16 @@ extension GameManager {
         }
         
         if let discardedCardsData = try? JSONEncoder().encode(discardedCards) {
-            buildActionWithSequence(type: .discard, payload: discardedCardsData, playerId: localPlayer.id) { action in
-                self.persistAndSend(action)
+            buildActionWithSequence(type: .discard, payload: discardedCardsData, playerId: localPlayer.id, onFailed: onFailed) { action in
+                self.registerLocalActionCompletion(completion, for: action.sequence)
+                self.persistAndSend(action, onFailed: {
+                    self.localActionCompletions.removeValue(forKey: action.sequence)
+                    onFailed?()
+                })
             }
         } else {
             logger.log("Error: Failed to encode the trump card")
+            onFailed?()
         }
     }
     
@@ -294,8 +509,9 @@ extension GameManager {
         let state = localPlayer.state
         logger.log("Sending new state \(state.message) to players")
         
-        if let state = try? JSONEncoder().encode(state) {
-            buildActionWithSequence(type: .sendState, payload: state, playerId: localPlayer.id) { action in
+        if let stateData = try? JSONEncoder().encode(state),
+           let action = buildTransientAction(type: .sendState, payload: stateData, playerId: localPlayer.id) {
+            if !isRestoring {
                 self.persistAndSend(action)
             }
         } else {
@@ -303,16 +519,14 @@ extension GameManager {
         }
     }
     
-    func sendStartNewGameAction() {
+    func sendStartNewGameAction(onCommitted: (() -> Void)? = nil) {
         logger.log("Sending start new game action to players")
         guard let localPlayer = gameState.localPlayer else { return }
 
-        Task {
-            do {
-                self.buildActionWithSequence(type: .startNewGame, payload: Data(), playerId: localPlayer.id) { action in
-                    self.persistAndSend(action)
-                }
-            }
+        self.buildActionWithSequence(type: .startNewGame, payload: Data(), playerId: localPlayer.id, onFailed: {
+            logger.log("Unable to build startNewGame action.")
+        }) { action in
+            self.persistAndSend(action, onCommitted: onCommitted)
         }
     }
     
@@ -323,7 +537,8 @@ extension GameManager {
             type: .refreshSession,
             payload: Data(),
             timestamp: Date().timeIntervalSince1970,
-            sequence: 0
+            sequence: 0,
+            context: nil
         )
 
         if let actionData = try? JSONEncoder().encode(action),
@@ -339,15 +554,15 @@ extension GameManager {
         }
     }
     
-    func sendCancelTrumpChoice() {
+    func sendCancelTrumpChoice(onFailed: (() -> Void)? = nil) {
         logger.log("Sending cancel trump choice action to players")
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
             return
         }
         
-        buildActionWithSequence(type: .cancelTrump, payload: Data(), playerId: localPlayer.id) { action in
-            self.persistAndSend(action)
+        buildActionWithSequence(type: .cancelTrump, payload: Data(), playerId: localPlayer.id, onFailed: onFailed) { action in
+            self.persistAndSend(action, onFailed: onFailed)
         }
     }
     
@@ -358,9 +573,10 @@ extension GameManager {
             return
         }
         
-        buildActionWithSequence(type: .amSlowPoke, payload: Data(), playerId: localPlayer.id) { action in
-            self.persistAndSend(action)
+        guard let action = buildTransientAction(type: .amSlowPoke, payload: Data(), playerId: localPlayer.id) else {
+            return
         }
+        self.persistAndSend(action)
     }
     
     func sendHonk() {
@@ -374,62 +590,96 @@ extension GameManager {
             return
         }
         
-        buildActionWithSequence(type: .honk, payload: Data(), playerId: localPlayer.id) { action in
-            self.persistAndSend(action)
+        guard let action = buildTransientAction(type: .honk, payload: Data(), playerId: localPlayer.id) else {
+            return
         }
+        self.persistAndSend(action)
         
         playSound(named: "pouet")
     }
     
-    func persistOrderAndDealer() {
+    func persistOrderAndDealer() async -> Bool {
         guard gameState.playOrder != [] else {
             logger.log("No playOrder defined")
-            return
+            return false
         }
         guard gameState.dealer != nil else {
             logger.log( "No dealer defined")
-            return
+            return false
         }
         guard let localPlayer = gameState.localPlayer else {
             logger.log("Error: Local player is not defined")
-            return
+            return false
         }
         
-        logger.log("Sending playOrder and Dealer to other players")
-        
-        if let playOrderData = try? JSONEncoder().encode(gameState.playOrder) {
-            buildActionWithSequence(type: .playOrder, payload: playOrderData, playerId: localPlayer.id) { action in
-                self.persist(action)
-            }
-        } else {
+        logger.log("Persisting playOrder and dealer before startNewGame")
+
+        guard let playOrderData = try? JSONEncoder().encode(gameState.playOrder) else {
             logger.log("Error: Failed to encode the play order")
+            return false
         }
 
-        if let dealerData = try? JSONEncoder().encode(gameState.dealer) {
-            buildActionWithSequence(type: .dealer, payload: dealerData, playerId: localPlayer.id) { action in
-                self.persist(action)
-            }
-        } else {
+        guard let dealerData = try? JSONEncoder().encode(gameState.dealer) else {
             logger.log("Error: Failed to encode the dealer")
+            return false
         }
+
+        guard let playOrderAction = await buildActionWithSequence(type: .playOrder, payload: playOrderData, playerId: localPlayer.id) else {
+            logger.log("Failed to reserve sequence for playOrder.")
+            return false
+        }
+        guard await saveGameAction(playOrderAction) else {
+            logger.log("Failed to persist playOrder seq \(playOrderAction.sequence). Aborting startNewGame.")
+            return false
+        }
+
+        guard let dealerAction = await buildActionWithSequence(type: .dealer, payload: dealerData, playerId: localPlayer.id) else {
+            logger.log("Failed to reserve sequence for dealer.")
+            return false
+        }
+        guard await saveGameAction(dealerAction) else {
+            logger.log("Failed to persist dealer seq \(dealerAction.sequence). Aborting startNewGame.")
+            return false
+        }
+
+        logger.log("Persisted playOrder seq \(playOrderAction.sequence) and dealer seq \(dealerAction.sequence)")
+        return true
     }
     
-    func persistAndSend(_ action: GameAction) {
+    func persistAndSend(_ action: GameAction, onCommitted: (() -> Void)? = nil, onFailed: (() -> Void)? = nil) {
         guard !isRestoring else { return }
-        
-        lastAppliedSequence = max(action.sequence, lastAppliedSequence)
-        logger.log("lastAppliedSequence set to \(lastAppliedSequence)")
-        
+
         if let actionData = try? JSONEncoder().encode(action),
            let messageString = String(data: actionData, encoding: .utf8) {
-            let sent = connectionManager.sendMessage(messageString)
-            if sent {
-                 logger.log("Sent P2P action \(action.type) to other players")
+            if action.type.isDurableOrdered {
+                Task { [weak self] in
+                    guard let self else { return }
+                    let didSave = await self.saveGameAction(action)
+                    await MainActor.run {
+                        guard didSave else {
+                            logger.log("Failed to persist action \(action.type) seq \(action.sequence). Skipping broadcast to avoid unrecoverable gaps.")
+                            onFailed?()
+                            return
+                        }
+
+                        let sent = self.connectionManager.sendMessage(messageString)
+                        if sent {
+                            logger.log("Persisted and sent P2P action \(action.type) seq \(action.sequence) to other players")
+                        } else {
+                            logger.log("Persisted action \(action.type) seq \(action.sequence), but P2P send failed for some peers")
+                        }
+
+                        self.receiveOrderedAction(action)
+                        onCommitted?()
+                    }
+                }
             } else {
-                 logger.log("Failed to send P2P action \(action.type) (some channels might not be open)")
-            }
-            if ![.amSlowPoke, .honk, .refreshSession].contains(action.type) {
-                saveGameAction(action)
+                let sent = connectionManager.sendMessage(messageString)
+                if sent {
+                     logger.log("Sent transient P2P action \(action.type) to other players")
+                } else {
+                     logger.log("Failed to send transient P2P action \(action.type) (some channels might not be open)")
+                }
             }
         } else {
             logger.log("Failed to encode action or convert to string")
@@ -438,8 +688,10 @@ extension GameManager {
     
     func persist(_ action: GameAction) {
         guard !isRestoring else { return }
-        if ![.amSlowPoke, .honk, .refreshSession].contains(action.type) {
-            saveGameAction(action)
+        if action.type.isDurableOrdered {
+            Task {
+                _ = await saveGameAction(action)
+            }
         }
     }
     

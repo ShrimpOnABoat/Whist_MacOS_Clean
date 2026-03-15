@@ -19,6 +19,9 @@ class P2PConnectionManager: NSObject {
     private var earlyRemoteCandidates: [PlayerId: [RTCIceCandidate]] = [:]
     private var messageQueues: [PlayerId: [String]] = [:]
     private var pendingLocalIceCandidates: [PlayerId: [RTCIceCandidate]] = [:]
+    #if DEBUG
+    private var debugNextSendDeadlineNs: [PlayerId: UInt64] = [:]
+    #endif
     
     private var peerConnections: [PlayerId: RTCPeerConnection] = [:]
     var onMessageReceived: ((PlayerId, String) -> Void)?
@@ -142,6 +145,9 @@ class P2PConnectionManager: NSObject {
             earlyRemoteCandidates.removeAll()
             pendingLocalIceCandidates.removeAll()
             messageQueues.removeAll()
+            #if DEBUG
+            debugNextSendDeadlineNs.removeAll()
+            #endif
             return (outgoing, incoming, connections)
         }
 
@@ -309,8 +315,15 @@ class P2PConnectionManager: NSObject {
         for (peerId, channel) in channels {
             if channel.readyState == .open {
                 #if DEBUG
-                let delay = Double.random(in: 0.1...0.8) // Simulate 100ms to 800ms delay
-                DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                let scheduledDeadline: DispatchTime = stateQueue.sync {
+                    let nowNs = DispatchTime.now().uptimeNanoseconds
+                    let baseNs = max(debugNextSendDeadlineNs[peerId] ?? nowNs, nowNs)
+                    let delayNs = UInt64.random(in: 100_000_000...800_000_000)
+                    let deadlineNs = baseNs + delayNs
+                    debugNextSendDeadlineNs[peerId] = deadlineNs
+                    return DispatchTime(uptimeNanoseconds: deadlineNs)
+                }
+                DispatchQueue.global().asyncAfter(deadline: scheduledDeadline) {
                     let sent = channel.sendData(buffer)
                     if !sent {
                         logger.log("Simulated lag: Failed to send message to \(peerId)")
@@ -318,7 +331,9 @@ class P2PConnectionManager: NSObject {
                             self.messageQueues[peerId, default: []].append(message)
                         }
                     } else {
-                        logger.logRTC("Simulated lag: Message sent to \(peerId) after \(Int(delay * 1000))ms")
+                        let nowNs = DispatchTime.now().uptimeNanoseconds
+                        let delayMs = max(0, Int((nowNs > scheduledDeadline.uptimeNanoseconds ? nowNs - scheduledDeadline.uptimeNanoseconds : 0) / 1_000_000))
+                        logger.logRTC("Simulated lag: Message sent to \(peerId) around scheduled delivery (+\(delayMs)ms jitter)")
                     }
                 }
                 #else
@@ -555,6 +570,9 @@ extension P2PConnectionManager: RTCDataChannelDelegate {
             earlyRemoteCandidates.removeValue(forKey: peerId)
             pendingLocalIceCandidates.removeValue(forKey: peerId)
             messageQueues.removeValue(forKey: peerId)
+            #if DEBUG
+            debugNextSendDeadlineNs.removeValue(forKey: peerId)
+            #endif
             return (pc, outgoing, incoming)
         }
 
