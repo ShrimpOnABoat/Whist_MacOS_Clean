@@ -633,10 +633,44 @@ extension GameManager {
             logger.log("the trump suit was already chosen by AI or the table is empty")
         }
     }
+
+    func AIChooseBet() {
+        guard let localPlayer = gameState.localPlayer else {
+            logger.fatalErrorAndLog("Error: Local player is not defined.")
+        }
+
+        guard localPlayer.announcedTricks.count < gameState.round else {
+            logger.log("AI bet skipped because a bet is already recorded for this round.")
+            return
+        }
+
+        let maxBet = max(gameState.round - 2, 1)
+        let chosenBet = Int.random(in: 0...maxBet)
+        logger.log("AI is choosing bet: \(chosenBet)")
+        choseBet(bet: chosenBet)
+        checkAndAdvanceStateIfNeeded()
+    }
     
     func AIdiscard(completion: @escaping () -> Void) {
+        let numberOfCardsToDiscard = autoDiscardCount()
+        if let hand = gameState.localPlayer?.hand {
+            guard numberOfCardsToDiscard > 0 else {
+                logger.log("AI discard skipped because no discard is required.")
+                completion()
+                return
+            }
+            let cardsToDiscard = Array(hand.shuffled().prefix(numberOfCardsToDiscard))
+            
+            discard(cardsToDiscard: cardsToDiscard) {
+                //                self.checkAndAdvanceStateIfNeeded()
+                completion()
+            }
+        }
+    }
+
+    func autoDiscardCount() -> Int {
         var numberOfCardsToDiscard = 0
-        
+
         if gameState.round > 3 {
             if gameState.localPlayer?.place == 2 {
                 if gameState.localPlayer?.monthlyLosses ?? 0 > 1 && gameState.round < 12 {
@@ -648,21 +682,14 @@ extension GameManager {
                 numberOfCardsToDiscard = 1
                 let playerScore = gameState.localPlayer?.scores[safe: gameState.round - 2] ?? 0
                 let secondPlayerScore = gameState.players[1].scores[safe: gameState.round - 2] ?? 0
-                
+
                 if gameState.localPlayer?.monthlyLosses ?? 0 > 0 || Double(playerScore) <= 0.5 * Double(secondPlayerScore) {
                     numberOfCardsToDiscard = 2
                 }
             }
         }
-        
-        if let hand = gameState.localPlayer?.hand {
-            let cardsToDiscard = Array(hand.shuffled().prefix(numberOfCardsToDiscard))
-            
-            discard(cardsToDiscard: cardsToDiscard) {
-                //                self.checkAndAdvanceStateIfNeeded()
-                completion()
-            }
-        }
+
+        return numberOfCardsToDiscard
     }
     
     // MARK: - Debugging Helpers

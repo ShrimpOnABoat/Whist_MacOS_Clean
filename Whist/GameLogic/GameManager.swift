@@ -82,6 +82,11 @@ class GameManager: ObservableObject {
     var isGameSetup: Bool = false
     var isAwaitingActionCompletionDuringRestore: Bool = false
     @Published var autoPilot: Bool = false
+    #if DEBUG
+    @Published var debugAutoPlayAllSteps: Bool = false
+    var debugAutoPlayWorkItem: DispatchWorkItem?
+    var debugAutoPlaySignature: String?
+    #endif
     
     var lastGameWinner: PlayerId?
     var showConfetti: Bool = false
@@ -277,12 +282,6 @@ class GameManager: ObservableObject {
         amSlowPoke = false
         isSlowPoke = [:]
         autoPilot = false // Resets the autoPilot
-        
-#if DEBUG
-        if gameState.localPlayer?.id != .toto {
-            autoPilot = true
-        }
-#endif
         
         // Move to the next dealer in playOrder
         guard let dealer = gameState.dealer,
@@ -789,6 +788,7 @@ class GameManager: ObservableObject {
     func saveScore() {
         // Update the game's winner
         lastGameWinner = gameState.players.first { $0.place == 1 }?.id
+        prepareLatestGameInsightsForCurrentGame()
         
         // Save the score only once
         if gameState.localPlayer?.id == .toto {
@@ -1090,6 +1090,12 @@ class GameManager: ObservableObject {
         self.isSlowPoke = [:]
         self.amHonked = false
         self.autoPilot = false
+        #if DEBUG
+        self.debugAutoPlayAllSteps = false
+        self.debugAutoPlayWorkItem?.cancel()
+        self.debugAutoPlayWorkItem = nil
+        self.debugAutoPlaySignature = nil
+        #endif
         self.lastGameWinner = nil
         self.latestGameInsightFacts = []
         self.latestGameAllInsightFacts = []

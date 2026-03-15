@@ -331,7 +331,21 @@ struct GameView: View {
                 VStack {
                     Spacer()
                     HStack(alignment: .bottom, spacing: 16) {
-                        
+                        #if DEBUG
+                        InsetTableButton(
+                            systemName: "hare.fill",
+                            imageName: nil,
+                            size: dynamicSize.dealerButtonSize,
+                            isOn: gameManager.debugAutoPlayAllSteps,
+                            accent: .orange,
+                            isEnabled: true
+                        ) {
+                            withAnimation(.easeInOut(duration: 0.1)) {
+                                gameManager.setDebugAutoPlayAllStepsEnabled(!gameManager.debugAutoPlayAllSteps)
+                            }
+                        }
+                        #endif
+
                         if [.playingTricks, .grabTrick].contains(gameManager.gameState.currentPhase) {
                             InsetTableButton(
                                 systemName: "bolt.fill",
@@ -389,6 +403,7 @@ struct GameView: View {
                     .padding(.leading, 16)
                     .padding(.bottom, 16)
                 }
+                .zIndex(20_000)
 
                 // End-of-game lobby panel on top of all game layers.
                 if gameManager.gameState.currentPhase == .waitingToStart && !gameManager.isFirstGame {

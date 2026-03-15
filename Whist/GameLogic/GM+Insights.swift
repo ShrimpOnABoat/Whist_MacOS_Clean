@@ -166,35 +166,47 @@ extension GameManager {
     }
 
     func refreshLatestGameInsights() async {
-        var loaded: GameInsightsSummary?
-        for attempt in 0..<3 {
-            loaded = try? await FirebaseService.shared.loadLatestGameInsights()
-            if loaded != nil { break }
-            if attempt < 2 {
+        for attempt in 0..<10 {
+            let loaded = try? await FirebaseService.shared.loadLatestGameInsights()
+            if let loaded, shouldApplyLoadedInsightsSummary(loaded) {
+                applyLatestGameInsights(loaded)
+                return
+            }
+            if attempt < 9 {
                 try? await Task.sleep(nanoseconds: 300_000_000)
             }
         }
-        if let expectedWinner = lastGameWinner,
-           let loadedWinner = loaded?.winner,
-           loadedWinner == expectedWinner {
-            latestGameInsightFacts = loaded?.topFacts ?? []
-            latestGameAllInsightFacts = loaded?.allFacts ?? loaded?.topFacts ?? []
-        } else {
-            #if DEBUG
-            // In debug runs, insights may be computed locally without persistence.
-            // Keep current values instead of blanking the end-of-game UI.
-            if !latestGameInsightFacts.isEmpty || !latestGameAllInsightFacts.isEmpty {
-                return
-            }
-            #endif
+
+        if hasLatestGameInsightsInMemory {
+            logger.log("Keeping in-memory insights while waiting for a matching saved summary.")
+            return
+        }
+
+        latestGameInsightFacts = []
+        latestGameAllInsightFacts = []
+    }
+
+    @discardableResult
+    func prepareLatestGameInsightsForCurrentGame() -> Bool {
+        let samples = buildInsightSamples()
+        guard !samples.isEmpty else {
             latestGameInsightFacts = []
             latestGameAllInsightFacts = []
+            return false
         }
+
+        let summary = makeInsightsSummary(from: samples, using: [:])
+        applyLatestGameInsights(summary)
+        return true
     }
 
     func publishInsightsSummaryForCurrentGame(shouldPersist: Bool = true) async throws {
         let samples = buildInsightSamples()
-        guard !samples.isEmpty else { return }
+        guard !samples.isEmpty else {
+            latestGameInsightFacts = []
+            latestGameAllInsightFacts = []
+            return
+        }
 
         let existingStats: [String: GameInsightMetricStats]
         if shouldPersist {
@@ -204,20 +216,8 @@ extension GameManager {
             existingStats = [:]
         }
 
-        let rankedFacts = rankFacts(from: samples, using: existingStats)
-        let topFacts = selectTopFacts(from: rankedFacts, maxCount: 3)
-        let metrics = Dictionary(uniqueKeysWithValues: samples.map { ($0.key, $0.value) })
-        let summary = GameInsightsSummary(
-            id: UUID().uuidString,
-            createdAt: Date(),
-            winner: lastGameWinner,
-            topFacts: topFacts,
-            allFacts: rankedFacts,
-            metrics: metrics
-        )
-
-        latestGameInsightFacts = topFacts
-        latestGameAllInsightFacts = rankedFacts
+        let summary = makeInsightsSummary(from: samples, using: existingStats)
+        applyLatestGameInsights(summary)
 
         guard shouldPersist else { return }
 
@@ -229,6 +229,36 @@ extension GameManager {
 
         try await FirebaseService.shared.saveLatestGameInsights(summary)
         try await FirebaseService.shared.saveGameInsightMetricStats(updatedStats)
+    }
+
+    private var hasLatestGameInsightsInMemory: Bool {
+        !latestGameInsightFacts.isEmpty || !latestGameAllInsightFacts.isEmpty
+    }
+
+    private func shouldApplyLoadedInsightsSummary(_ summary: GameInsightsSummary?) -> Bool {
+        guard let summary else { return false }
+        guard let expectedWinner = lastGameWinner else { return true }
+        return summary.winner == expectedWinner
+    }
+
+    private func applyLatestGameInsights(_ summary: GameInsightsSummary) {
+        latestGameInsightFacts = summary.topFacts
+        latestGameAllInsightFacts = summary.allFacts ?? summary.topFacts
+    }
+
+    private func makeInsightsSummary(from samples: [InsightSample],
+                                     using statsByKey: [String: GameInsightMetricStats]) -> GameInsightsSummary {
+        let rankedFacts = rankFacts(from: samples, using: statsByKey)
+        let topFacts = selectTopFacts(from: rankedFacts, maxCount: 3)
+        let metrics = Dictionary(uniqueKeysWithValues: samples.map { ($0.key, $0.value) })
+        return GameInsightsSummary(
+            id: UUID().uuidString,
+            createdAt: Date(),
+            winner: lastGameWinner,
+            topFacts: topFacts,
+            allFacts: rankedFacts,
+            metrics: metrics
+        )
     }
 
     private func buildInsightSamples() -> [InsightSample] {

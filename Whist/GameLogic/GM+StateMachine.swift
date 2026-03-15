@@ -48,6 +48,113 @@ enum GamePhase: Encodable, Decodable {
 }
 
 extension GameManager {
+    var shouldAutoPlayCards: Bool {
+        #if DEBUG
+        return autoPilot || debugAutoPlayAllSteps
+        #else
+        return autoPilot
+        #endif
+    }
+
+    #if DEBUG
+    func setDebugAutoPlayAllStepsEnabled(_ enabled: Bool) {
+        debugAutoPlayWorkItem?.cancel()
+        debugAutoPlayWorkItem = nil
+        debugAutoPlaySignature = nil
+        debugAutoPlayAllSteps = enabled
+        if enabled {
+            scheduleDebugAutoPlayForCurrentState()
+        }
+    }
+
+    func scheduleDebugAutoPlayForCurrentState() {
+        guard debugAutoPlayAllSteps, !isRestoring else { return }
+
+        guard let signature = debugAutoPlaySignatureForCurrentState() else {
+            debugAutoPlaySignature = nil
+            return
+        }
+
+        guard debugAutoPlaySignature != signature else { return }
+
+        debugAutoPlayWorkItem?.cancel()
+        debugAutoPlaySignature = signature
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.debugAutoPlayWorkItem = nil
+                self.performDebugAutoPlayIfStillNeeded(signature: signature)
+            }
+        }
+        debugAutoPlayWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func performDebugAutoPlayIfStillNeeded(signature: String) {
+        guard debugAutoPlayAllSteps, !isRestoring else { return }
+        guard debugAutoPlaySignature == signature else { return }
+        guard debugAutoPlaySignatureForCurrentState() == signature else {
+            debugAutoPlaySignature = nil
+            scheduleDebugAutoPlayForCurrentState()
+            return
+        }
+
+        debugAutoPlaySignature = nil
+
+        switch gameState.currentPhase {
+        case .choosingTrump:
+            waitForAnimationsToFinish {
+                self.AIChooseTrumpSuit { }
+            }
+        case .bidding:
+            AIChooseBet()
+        case .discard:
+            waitForAnimationsToFinish {
+                self.AIdiscard { }
+            }
+        case .playingTricks:
+            waitForAnimationsToFinish {
+                self.AIPlayCard() {
+                    if self.allPlayersPlayed() {
+                        self.transition(to: .grabTrick)
+                    } else {
+                        self.setPlayerState(to: .waiting)
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    private func debugAutoPlaySignatureForCurrentState() -> String? {
+        guard let localPlayer = gameState.localPlayer else { return nil }
+
+        switch gameState.currentPhase {
+        case .choosingTrump:
+            guard localPlayer.place == 3,
+                  gameState.trumpSuit == nil,
+                  !gameState.table.isEmpty else { return nil }
+            return "choosingTrump:\(gameState.round):\(localPlayer.id.rawValue):\(gameState.table.count)"
+        case .bidding:
+            guard localPlayer.announcedTricks.count < gameState.round,
+                  localPlayer.state == .bidding else { return nil }
+            return "bidding:\(gameState.round):\(localPlayer.id.rawValue):\(localPlayer.announcedTricks.count)"
+        case .discard:
+            guard localPlayer.state == .discarding else { return nil }
+            let discardCount = autoDiscardCount()
+            guard discardCount > 0 else { return nil }
+            return "discard:\(gameState.round):\(localPlayer.id.rawValue):\(localPlayer.hand.count):\(discardCount)"
+        case .playingTricks:
+            guard isLocalPlayerTurnToPlay(),
+                  !localPlayer.hand.isEmpty else { return nil }
+            return "playing:\(gameState.round):\(gameState.currentTrick):\(localPlayer.id.rawValue):\(gameState.table.count):\(localPlayer.hand.count)"
+        default:
+            return nil
+        }
+    }
+    #endif
     
     //     MARK: Transition
     
@@ -132,6 +239,9 @@ extension GameManager {
             Task {
                 await self.refreshLatestGameInsights()
             }
+            #if DEBUG
+            scheduleDebugAutoPlayForCurrentState()
+            #endif
             
         case .newGame:
             setPlayerState(to: .idle)
@@ -251,6 +361,9 @@ extension GameManager {
             waitForAnimationsToFinish {
                 self.chooseTrump() {
                     self.hoveredSuit = nil
+                    #if DEBUG
+                    self.scheduleDebugAutoPlayForCurrentState()
+                    #endif
                 }
             }
             
@@ -264,6 +377,9 @@ extension GameManager {
             
         case .discard:
             setPlayerState(to: .discarding)
+            #if DEBUG
+            scheduleDebugAutoPlayForCurrentState()
+            #endif
             
         case .bidding:
             trackRoundDifficultySnapshotIfNeeded()
@@ -272,6 +388,9 @@ extension GameManager {
                     logger.log("local player must bet < 4")
                     setPlayerState(to: .bidding)
                     showOptions = true
+                    #if DEBUG
+                    scheduleDebugAutoPlayForCurrentState()
+                    #endif
                 } else if allPlayersBet() {
                     showOptions = false
                     transition(to: .showCard)
@@ -303,6 +422,9 @@ extension GameManager {
                         showOptions = true
                         setPlayerState(to: .bidding)
                         logger.log("local player must bet > 3")
+                        #if DEBUG
+                        scheduleDebugAutoPlayForCurrentState()
+                        #endif
                     }
                 }
             }
@@ -327,7 +449,7 @@ extension GameManager {
             if isLocalPlayerTurnToPlay() {
                 setPlayerState(to: .playing)
                 setPlayableCards()
-                if autoPilot && !isRestoring {
+                if shouldAutoPlayCards && !isRestoring {
                     waitForAnimationsToFinish {
                         self.AIPlayCard() {
                             if self.allPlayersPlayed() {
