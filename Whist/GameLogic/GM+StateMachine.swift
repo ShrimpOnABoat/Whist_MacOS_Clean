@@ -49,6 +49,9 @@ enum GamePhase: Encodable, Decodable {
 
 extension GameManager {
     var shouldAutoPlayCards: Bool {
+        if preferences.autoPlayLastCard, let handCount = gameState.localPlayer?.hand.count, handCount == 1 {
+            return true
+        }
         #if DEBUG
         return autoPilot || debugAutoPlayAllSteps
         #else
@@ -975,3 +978,4 @@ extension GameManager {
         slowpokeTimer = timer
     }
 }
+

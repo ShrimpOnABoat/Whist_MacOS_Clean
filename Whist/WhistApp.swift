@@ -261,6 +261,7 @@ class Preferences: ObservableObject {
     @AppStorage("enabledRandomColors") private var enabledRandomColorsData: Data?
     // Per-sound volumes (0 = mute). Stored as JSON in UserDefaults.
     @AppStorage("soundVolumes") private var soundVolumesData: Data?
+    @AppStorage("autoPlayLastCard") var autoPlayLastCard: Bool = false
     #if DEBUG
     @Published var playerId: String = ""
     #else
@@ -369,6 +370,7 @@ struct PreferencesView: View {
                         .padding(.vertical, 4)) {
                             Toggle("Usure du tapis", isOn: $preferences.wearIntensity)
                             Toggle("Motifs", isOn: $preferences.motif)
+                            Toggle("Jouer automatiquement la dernière carte", isOn: $preferences.autoPlayLastCard)
                         }
                 }
 
