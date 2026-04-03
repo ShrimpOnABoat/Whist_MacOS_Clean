@@ -387,7 +387,16 @@ struct PlayerView: View {
                     switch player.state {
                     case .idle: return ""
                     case .choosingTrump: return "Choisis l'atout"
-                    case .bidding: return "Choisis une mise"
+                    case .bidding:
+                        #if DEBUG
+                        let hand = player.hand
+                        let midDensity = gameManager.midCardDensity(in: hand)
+                        let dominantSuitConcentration = gameManager.dominantSuitConcentration(in: hand)
+                        let difficulty = gameManager.handDifficultyIndex(midDensity: midDensity, dominantSuitConcentration: dominantSuitConcentration)
+                        return "Choisis une mise (Diff: \(String(format: "%.2f", difficulty)))"
+                        #else
+                        return "Choisis une mise"
+                        #endif
                     case .discarding: return "Défausse tes cartes"
                     case .playing: return "Joue une carte"
                     case .waiting: return ""

@@ -1097,14 +1097,14 @@ extension GameManager {
         }
     }
 
-    private func midCardDensity(in hand: [Card]) -> Double {
+    func midCardDensity(in hand: [Card]) -> Double {
         guard !hand.isEmpty else { return 0 }
         let midRanks: Set<Rank> = [.nine, .ten, .jack, .queen]
         let count = hand.filter { midRanks.contains($0.rank) }.count
         return Double(count) / Double(hand.count)
     }
 
-    private func dominantSuitConcentration(in hand: [Card]) -> Double {
+    func dominantSuitConcentration(in hand: [Card]) -> Double {
         guard !hand.isEmpty else { return 0 }
         var bySuit: [Suit: Int] = [:]
         for card in hand {
@@ -1114,13 +1114,13 @@ extension GameManager {
         return Double(dominantCount) / Double(hand.count)
     }
 
-    private func suitConcentration(in hand: [Card], targetSuit: Suit) -> Double {
+    func suitConcentration(in hand: [Card], targetSuit: Suit) -> Double {
         guard !hand.isEmpty else { return 0 }
         let count = hand.filter { $0.suit == targetSuit }.count
         return Double(count) / Double(hand.count)
     }
 
-    private func handDifficultyIndex(midDensity: Double, dominantSuitConcentration: Double) -> Double {
+    func handDifficultyIndex(midDensity: Double, dominantSuitConcentration: Double) -> Double {
         let dispersionHardness = 1.0 - dominantSuitConcentration
         return (0.7 * midDensity) + (0.3 * dispersionHardness)
     }
