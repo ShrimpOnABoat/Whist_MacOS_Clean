@@ -88,7 +88,7 @@ struct GameView: View {
         let imageName: String?
         let size: CGFloat
         var isOn: Bool = false
-        var accent: Color = .green
+        var accent: () -> Color = { .green }
         var isEnabled: Bool = true
         var action: () -> Void
 
@@ -108,12 +108,12 @@ struct GameView: View {
                     }
                 }
                 .frame(width: size, height: size)
-                .background(isOn ? accent : Color.white.opacity(0.5))
+                .background(isOn ? accent() : Color.white.opacity(0.5))
                 .cornerRadius(8)
                 .shadow(radius: 5)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(isOn ? accent : Color.white, lineWidth: 2)
+                        .stroke(isOn ? accent() : Color.white, lineWidth: 2)
                 )
             }
             .buttonStyle(HoverMoveUpButtonStyle(isActive: isEnabled))
@@ -337,7 +337,7 @@ struct GameView: View {
                             imageName: nil,
                             size: dynamicSize.dealerButtonSize,
                             isOn: gameManager.debugAutoPlayAllSteps,
-                            accent: .orange,
+                            accent: { .orange },
                             isEnabled: true
                         ) {
                             withAnimation(.easeInOut(duration: 0.1)) {
@@ -352,11 +352,19 @@ struct GameView: View {
                                 imageName: nil,
                                 size: dynamicSize.dealerButtonSize,
                                 isOn: gameManager.autoPilot,
-                                accent: .green,
+                                accent: { gameManager.autoPilotShouldWinTricks ? .green : .red },
                                 isEnabled: true
-                            ) {
+                            )
+                            {
                                 withAnimation(.easeInOut(duration: 0.1)) {
                                     gameManager.autoPilot.toggle()
+                                    if gameManager.autoPilot {
+                                        if let localPlayer = gameManager.gameState.localPlayer {
+                                            if localPlayer.announcedTricks.count > localPlayer.madeTricks.count {
+                                                gameManager.autoPilotShouldWinTricks = true
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         } else {
@@ -374,7 +382,7 @@ struct GameView: View {
                                     imageName: "horn",
                                     size: dynamicSize.dealerButtonSize,
                                     isOn: true,
-                                    accent: .yellow,
+                                    accent: { .yellow },
                                     isEnabled: true
                                 ) {
                                     gameManager.sendHonk()
@@ -390,7 +398,7 @@ struct GameView: View {
                                     imageName: "horn",
                                     size: dynamicSize.dealerButtonSize,
                                     isOn: false,
-                                    accent: .yellow,
+                                    accent: { .yellow },
                                     isEnabled: false
                                 ) {
                                 }
@@ -588,3 +596,4 @@ struct GridOverlay: View {
         }
     }
 }
+

@@ -82,6 +82,7 @@ class GameManager: ObservableObject {
     var isGameSetup: Bool = false
     var isAwaitingActionCompletionDuringRestore: Bool = false
     @Published var autoPilot: Bool = false
+    @Published var autoPilotShouldWinTricks: Bool = false
     #if DEBUG
     @Published var debugAutoPlayAllSteps: Bool = false
     var debugAutoPlayWorkItem: DispatchWorkItem?
@@ -1190,3 +1191,4 @@ class GameManager: ObservableObject {
         }
     }
 }
+
