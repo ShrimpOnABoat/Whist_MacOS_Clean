@@ -1144,7 +1144,17 @@ class GameManager: ObservableObject {
             if !restored {
                 await MainActor.run {
                     logger.log("No actions to restore. Rebuilding fresh setup flow.")
-                    self.transition(to: .setPlayOrder)
+                    // Enable catch-up for game clear scenarios to ensure proper synchronization
+                    self.canCatchUp = true
+                    
+                    // For game clear scenarios, ensure we start from waitingForPlayers to force proper synchronization
+                    // This ensures all players go through the proper setup flow together
+                    if self.gameState.playOrder.isEmpty {
+                        logger.log("Game clear detected. Transitioning to waitingForPlayers to force full synchronization.")
+                        self.transition(to: .waitingForPlayers)
+                    } else {
+                        self.transition(to: .setPlayOrder)
+                    }
                 }
             }
         }

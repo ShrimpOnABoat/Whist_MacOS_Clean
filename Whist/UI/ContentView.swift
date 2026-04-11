@@ -33,7 +33,13 @@ struct ContentView: View {
         }
         .onChange(of: preferences.playerId) { _ in
             identifyAndUpdateLocalPlayer()
-//            gameManager.startNetworkingIfNeeded()
+            gameManager.startNetworkingIfNeeded()
+        }
+        // Handle app refresh/reactivation (macOS version)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            logger.log("ContentView: App reactivated, reinitializing networking...")
+            identifyAndUpdateLocalPlayer()
+            gameManager.startNetworkingIfNeeded()
         }
     }
     // Helper function to avoid code duplication

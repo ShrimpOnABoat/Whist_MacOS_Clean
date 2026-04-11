@@ -22,11 +22,15 @@ class PresenceManager: ObservableObject {
     var onPeerPresenceChanged: ((_ peerId: PlayerId, _ isOnline: Bool) -> Void)?
     
     // 1. Add a property to store the current session ID
-    public let currentSessionId = UUID().uuidString
+    // Make it private(set) so it can only be set internally, but readable externally
+    private(set) public var currentSessionId: String
     // 2. Keep track of peers' session IDs to detect restarts
     private var peerSessionIds: [PlayerId: String] = [:]
     
-    private init() {}
+    private init() {
+        // Initialize with a new UUID, but this will be preserved across game clears
+        self.currentSessionId = UUID().uuidString
+    }
     
     // 3. Helper to get a peer's session ID
     func getSessionId(for peerId: PlayerId) -> String? {
