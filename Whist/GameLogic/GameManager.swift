@@ -791,6 +791,11 @@ class GameManager: ObservableObject {
         lastGameWinner = gameState.players.first { $0.place == 1 }?.id
         prepareLatestGameInsightsForCurrentGame()
         
+        #if DEBUG
+        logger.log("🚫 Skipping score save in DEBUG mode")
+        return
+        #endif
+        
         // Save the score only once
         if gameState.localPlayer?.id == .toto {
             // Retrieve players by their ID using the gameState helper.

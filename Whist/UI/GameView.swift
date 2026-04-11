@@ -352,7 +352,7 @@ struct GameView: View {
                                 imageName: nil,
                                 size: dynamicSize.dealerButtonSize,
                                 isOn: gameManager.autoPilot,
-                                accent: { gameManager.autoPilotShouldWinTricks ? .green : .red },
+                                accent: { .green },
                                 isEnabled: true
                             )
                             {
