@@ -228,6 +228,13 @@ struct DatabaseMenuCommands: Commands {
                 }
             }
             
+            Button("Export Game Actions") {
+                gameManager.exportGameActionsForAnalysis()
+            }
+            .help("Export all saved game actions to a JSON file. Only available to toto.")
+
+            Divider()
+            
             Button("Clear Saved Game") {
                 let alert = NSAlert()
                 alert.messageText = "Are you sure you want to clear the saved game?"
@@ -240,12 +247,6 @@ struct DatabaseMenuCommands: Commands {
                     gameManager.clearSavedGameActions()
                 }
             }
-            
-            Button("Export Game Actions") {
-                gameManager.exportGameActionsForAnalysis()
-            }
-            .help("Export all saved game actions to a JSON file. Only available to toto.")
-            Divider()
         }
     }
 }
@@ -502,14 +503,6 @@ struct NetworkMenuCommands: Commands {
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
             .help("Relit les gameActions pour resynchroniser la partie en cours.")
-
-            Divider()
-
-            Button("Admin: Retour à Nouvelle partie") {
-                gameManager.adminRefreshToNewGameLobby()
-            }
-            .disabled(gameManager.gameState.localPlayer?.id != .toto)
-            .help("Toto seulement: efface les anciennes gameActions et force un retour synchronisé à Nouvelle partie.")
         }
     }
 }

@@ -895,9 +895,7 @@ class GameManager: ObservableObject {
             logger.log("Skipping clearSavedGameActions: only toto can clear shared game actions.")
             return
         }
-        Task {
-            await persistence.clearGameActions()
-        }
+        adminRefreshToNewGameLobby()
     }
     
     // MARK: Restore saved actions
@@ -1053,7 +1051,7 @@ class GameManager: ObservableObject {
         }
     }
     
-    func resetStateAndRestoreGame() {
+    func resetStateAndRestoreGame(preferFreshLobbyOnEmptyRestore: Bool = false) {
         logger.log("⚠️ Resetting game state and restoring from actions (P2P connections preserved).")
         
         // 1) Snapshot transient UI state per player before replacing gameState
@@ -1146,10 +1144,9 @@ class GameManager: ObservableObject {
                     logger.log("No actions to restore. Rebuilding fresh setup flow.")
                     // Enable catch-up for game clear scenarios to ensure proper synchronization
                     self.canCatchUp = true
-                    
-                    // For game clear scenarios, ensure we start from waitingForPlayers to force proper synchronization
-                    // This ensures all players go through the proper setup flow together
-                    if self.gameState.playOrder.isEmpty {
+
+                    // A requested fresh-lobby rebuild must not depend on transient bootstrap playOrder.
+                    if preferFreshLobbyOnEmptyRestore {
                         logger.log("Game clear detected. Transitioning to waitingForPlayers to force full synchronization.")
                         self.transition(to: .waitingForPlayers)
                     } else {
@@ -1163,7 +1160,7 @@ class GameManager: ObservableObject {
     func adminRefreshToNewGameLobby() {
         guard gameState.localPlayer?.id == .toto else {
             logger.log("adminRefreshToNewGameLobby ignored: only toto can trigger it.")
-            resetStateAndRestoreGame()
+            resetStateAndRestoreGame(preferFreshLobbyOnEmptyRestore: true)
             return
         }
 
@@ -1173,7 +1170,7 @@ class GameManager: ObservableObject {
             await self.persistence.clearGameActions()
             await MainActor.run {
                 self.sendRefreshSessionAction()
-                self.resetStateAndRestoreGame()
+                self.resetStateAndRestoreGame(preferFreshLobbyOnEmptyRestore: true)
             }
         }
     }
@@ -1206,4 +1203,3 @@ class GameManager: ObservableObject {
         }
     }
 }
-

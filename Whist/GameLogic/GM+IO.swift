@@ -357,7 +357,7 @@ extension GameManager {
 
         case .refreshSession:
             logger.log("Received admin refresh session action")
-            self.resetStateAndRestoreGame()
+            self.resetStateAndRestoreGame(preferFreshLobbyOnEmptyRestore: true)
             
         case .amSlowPoke:
             logger.log("Received slowPoke signal")

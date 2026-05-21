@@ -83,13 +83,15 @@ struct MonthlySummary: Identifiable {
     let totoTally: Int
 }
 
-struct SummaryView: View {
-    @EnvironmentObject var gameManager: GameManager
-    let year: Int
-    @State private var monthlySummaries: [MonthlySummary] = []
-    @State private var glowPulse: Bool = false
+struct AnnualScoreSummary {
+    static let empty = AnnualScoreSummary(
+        monthlySummaries: [],
+        perfectGameBonuses: (gg: 0, dd: 0, toto: 0)
+    )
 
-    // Compute overall totals from the monthly summaries.
+    let monthlySummaries: [MonthlySummary]
+    let perfectGameBonuses: (gg: Int, dd: Int, toto: Int)
+
     var total: (gg: Int, dd: Int, toto: Int, ggTally: Int, ddTally: Int, totoTally: Int) {
         var total = (gg: 0, dd: 0, toto: 0, ggTally: 0, ddTally: 0, totoTally: 0)
         for summary in monthlySummaries {
@@ -100,7 +102,25 @@ struct SummaryView: View {
             total.ddTally += summary.ddTally
             total.totoTally += summary.totoTally
         }
+        total.gg += perfectGameBonuses.gg
+        total.dd += perfectGameBonuses.dd
+        total.toto += perfectGameBonuses.toto
         return total
+    }
+
+    var hasPerfectGameBonuses: Bool {
+        perfectGameBonuses.gg > 0 || perfectGameBonuses.dd > 0 || perfectGameBonuses.toto > 0
+    }
+}
+
+struct SummaryView: View {
+    @EnvironmentObject var gameManager: GameManager
+    let year: Int
+    @State private var annualSummary: AnnualScoreSummary = .empty
+    @State private var glowPulse: Bool = false
+
+    var total: (gg: Int, dd: Int, toto: Int, ggTally: Int, ddTally: Int, totoTally: Int) {
+        annualSummary.total
     }
     
     private var currentYear: Int {
@@ -144,7 +164,7 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func annualPodiumHeader() -> some View {
-        if year == currentYear || monthlySummaries.isEmpty {
+        if year == currentYear || annualSummary.monthlySummaries.isEmpty {
             EmptyView() // hide for current year
         } else {
             let order = podiumOrder()
@@ -237,7 +257,7 @@ struct SummaryView: View {
                 Divider()
 
                 // Data rows
-                ForEach(monthlySummaries) { summary in
+                ForEach(annualSummary.monthlySummaries) { summary in
                     HStack {
                         Text(summary.month).frame(width: 100, alignment: .leading).foregroundColor(.primary)
                         Spacer()
@@ -250,6 +270,28 @@ struct SummaryView: View {
                         Text("\(summary.ggTally)").frame(width: 40, alignment: .center)
                         Text("\(summary.ddTally)").frame(width: 40, alignment: .center)
                         Text("\(summary.totoTally)").frame(width: 40, alignment: .center)
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                if annualSummary.hasPerfectGameBonuses {
+                    Divider()
+
+                    HStack {
+                        Text("Bonus parties parfaites").frame(width: 100, alignment: .leading).foregroundColor(.secondary)
+                        Spacer()
+                        bonusText(annualSummary.perfectGameBonuses.gg)
+                            .frame(width: 40, alignment: .center)
+                        bonusText(annualSummary.perfectGameBonuses.dd)
+                            .frame(width: 40, alignment: .center)
+                        bonusText(annualSummary.perfectGameBonuses.toto)
+                            .frame(width: 40, alignment: .center)
+                        Rectangle()
+                            .frame(width: 1, height: 20)
+                            .foregroundColor(Color(NSColor.separatorColor))
+                        Text("").frame(width: 40, alignment: .center)
+                        Text("").frame(width: 40, alignment: .center)
+                        Text("").frame(width: 40, alignment: .center)
                     }
                     .padding(.vertical, 2)
                 }
@@ -283,24 +325,75 @@ struct SummaryView: View {
             Task { await loadData() }
         }
         .onChange(of: year) { _ in
-            monthlySummaries = []
+            annualSummary = .empty
             Task { await loadData() }
+        }
+    }
+
+    @ViewBuilder
+    private func bonusText(_ value: Int) -> some View {
+        if value > 0 {
+            Text("+\(value)")
+                .foregroundColor(.green)
+        } else {
+            Text("0")
+                .foregroundColor(.secondary)
         }
     }
     
     private func loadData() async {
-        let summaries = await computeMonthlySummaries(for: year)
+        let scores = await ScoresManager.shared.loadScoresSafely(for: year)
+        let annualSummary = computeAnnualScoreSummary(for: year, scores: scores)
         await MainActor.run {
-            self.monthlySummaries = summaries
+            self.annualSummary = annualSummary
         }
     }
+}
+
+private let completedGameRoundCount = 12
+private let perfectGameAnnualBonus = 1
+
+/// Computes annual bonus points for perfect games. Missing consecutive-win counts are not bonus-eligible.
+func computePerfectGameCounts(for year: Int, scores: [GameScore]) -> (gg: Int, dd: Int, toto: Int) {
+    let calendar = Calendar.current
+    var counts = (gg: 0, dd: 0, toto: 0)
+    
+    for score in scores {
+        guard calendar.component(.year, from: score.date) == year else { continue }
+        
+        if isPerfectGame(consecutiveWins: score.ggConsecutiveWins) {
+            counts.gg += perfectGameAnnualBonus
+        }
+        if isPerfectGame(consecutiveWins: score.ddConsecutiveWins) {
+            counts.dd += perfectGameAnnualBonus
+        }
+        if isPerfectGame(consecutiveWins: score.totoConsecutiveWins) {
+            counts.toto += perfectGameAnnualBonus
+        }
+    }
+    
+    return counts
+}
+
+func isPerfectGame(consecutiveWins: Int?) -> Bool {
+    consecutiveWins == completedGameRoundCount
+}
+
+func computeAnnualScoreSummary(for year: Int, scores: [GameScore]) -> AnnualScoreSummary {
+    AnnualScoreSummary(
+        monthlySummaries: computeMonthlySummaries(for: year, scores: scores),
+        perfectGameBonuses: computePerfectGameCounts(for: year, scores: scores)
+    )
 }
 
 /// Computes the monthly summaries for the given year by loading the scores and grouping them.
 /// Update the monthly summaries function to use the new point calculation.
 func computeMonthlySummaries(for year: Int) async -> [MonthlySummary] {
     let scores = await ScoresManager.shared.loadScoresSafely(for: year)
+    return computeMonthlySummaries(for: year, scores: scores)
+}
 
+func computeMonthlySummaries(for year: Int, scores: [GameScore]) -> [MonthlySummary] {
     let monthNames = [
         1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",
         5: "Mai", 6: "Juin", 7: "Juillet", 8: "Août",
