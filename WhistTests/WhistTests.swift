@@ -11,6 +11,83 @@ import Testing
 
 struct WhistTests {
 
+    @Test func defaultGameStateCreatesThreeKnownPlayers() {
+        let state = GameState()
+
+        #expect(state.players.map(\.id) == [.dd, .gg, .toto])
+        #expect(state.players.allSatisfy { !$0.firebasePresenceOnline })
+        #expect(state.round == 0)
+        #expect(state.currentPhase == .waitingForPlayers)
+    }
+
+    @Test @MainActor func initializedDeckContainsThirtyTwoNonTrumpCardsAndFourTrumpTwos() {
+        let manager = makeGameManager()
+
+        manager.initializeCards()
+
+        #expect(manager.gameState.deck.count == 32)
+        #expect(manager.gameState.trumpCards.count == 4)
+        #expect(manager.gameState.deck.allSatisfy { $0.rank != .two })
+        #expect(Set(manager.gameState.deck.map(\.id)).count == 32)
+        #expect(Set(manager.gameState.trumpCards.map(\.id)) == [
+            "clubs_2",
+            "spades_2",
+            "diamonds_2",
+            "hearts_2"
+        ])
+    }
+
+    @Test @MainActor func gameStateIntegrityAcceptsCompleteInitializedGame() {
+        let manager = makeGameManager()
+        manager.gameState.playOrder = [.dd, .gg, .toto]
+        manager.gameState.dealer = .dd
+
+        manager.initializeCards()
+
+        #expect(manager.gameState.checkIntegrity().isEmpty)
+    }
+
+    @Test @MainActor func gameStateIntegrityReportsMissingDealerAndPlayOrder() {
+        let manager = makeGameManager()
+
+        manager.initializeCards()
+
+        let errors = manager.gameState.checkIntegrity()
+        #expect(errors.contains("Dealer is not defined."))
+        #expect(errors.contains { $0.contains("playOrder") })
+    }
+
+    @Test func cardCodingPreservesIdentityAndAnimationType() throws {
+        let card = Card(suit: .hearts, rank: .ace)
+        card.playAnimationType = .impact
+
+        let data = try JSONEncoder().encode(card)
+        let decoded = try JSONDecoder().decode(Card.self, from: data)
+
+        #expect(decoded.id == "hearts_ace")
+        #expect(decoded.suit == .hearts)
+        #expect(decoded.rank == .ace)
+        #expect(decoded.playAnimationType == .impact)
+        #expect(decoded.isFaceDown)
+        #expect(!decoded.isPlayable)
+    }
+
+    @Test func actionPhaseRulesKeepPlayCardsInTrickPhaseOnly() {
+        #expect(GameAction.ActionType.playCard.associatedPhases == [.playingTricks])
+        #expect(GameAction.ActionType.playCard.associatedPhases.contains(.playingTricks))
+        #expect(!GameAction.ActionType.playCard.associatedPhases.contains(.bidding))
+        #expect(!GameAction.ActionType.playCard.associatedPhases.contains(.grabTrick))
+    }
+
+    @Test func administrativeActionsAreAcceptedInAnyPhase() {
+        #expect(GameAction.ActionType.refreshSession.associatedPhases.isEmpty)
+        #expect(GameAction.ActionType.sendState.associatedPhases.isEmpty)
+        #expect(GameAction.ActionType.honk.associatedPhases.isEmpty)
+        #expect(!GameAction.ActionType.refreshSession.isDurableOrdered)
+        #expect(!GameAction.ActionType.sendState.isDurableOrdered)
+        #expect(!GameAction.ActionType.honk.isDurableOrdered)
+    }
+
     @Test func perfectGameBonusCountsOnePointPerPerfectGame() {
         let scores = [
             makeScore(ggConsecutiveWins: 12, ddConsecutiveWins: 11, totoConsecutiveWins: nil),
@@ -94,6 +171,15 @@ struct WhistTests {
             ggConsecutiveWins: ggConsecutiveWins,
             ddConsecutiveWins: ddConsecutiveWins,
             totoConsecutiveWins: totoConsecutiveWins
+        )
+    }
+
+    @MainActor
+    private func makeGameManager() -> GameManager {
+        GameManager(
+            connectionManager: .shared,
+            signalingManager: .shared,
+            preferences: Preferences()
         )
     }
 

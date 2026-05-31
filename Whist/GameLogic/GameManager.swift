@@ -115,6 +115,7 @@ class GameManager: ObservableObject {
     @Published var playersScoresUpdated: Bool = false
     var isFirstGame: Bool = true
     var isFinalizingGameOver: Bool = false
+    var hasStartedFinalScoreSave: Bool = false
     
     // MARK: - Slowpoke Timer Properties
     var slowpokeTimer: DispatchSourceTimer?
@@ -229,6 +230,8 @@ class GameManager: ObservableObject {
     
     func newGame() {
         resetInsightsTrackingForNewGame()
+        hasStartedFinalScoreSave = false
+        lastGameWinner = nil
         gameState.round = 0
         gameState.players.forEach {
             $0.scores.removeAll()
@@ -789,6 +792,13 @@ class GameManager: ObservableObject {
     func saveScore() {
         // Update the game's winner
         lastGameWinner = gameState.players.first { $0.place == 1 }?.id
+
+        guard !hasStartedFinalScoreSave else {
+            logger.log("Final score save already started. Skipping duplicate save.")
+            return
+        }
+
+        hasStartedFinalScoreSave = true
         prepareLatestGameInsightsForCurrentGame()
         
         #if DEBUG
@@ -1088,6 +1098,7 @@ class GameManager: ObservableObject {
         self.dealerPosition = .zero
         self.playersScoresUpdated = false
         self.isFirstGame = true
+        self.hasStartedFinalScoreSave = false
         self.slowpokeTimer?.cancel()
         self.slowpokeTimer = nil
         self.amSlowPoke = false

@@ -47,6 +47,7 @@ enum GamePhase: Encodable, Decodable {
     }
 }
 
+
 extension GameManager {
     var shouldAutoPlayCards: Bool {
         if preferences.autoPlayLastCard, let handCount = gameState.localPlayer?.hand.count, handCount == 1 {
@@ -528,6 +529,7 @@ extension GameManager {
                     // if last round, transition to gameOver
                     self.isAwaitingActionCompletionDuringRestore = false
                     if self.gameState.round == 12 {
+                        self.saveScore()
                         self.transition(to: .gameOver)
                     } else { // proceed to the next round
                         self.transition(to: .setupNewRound)
@@ -540,8 +542,6 @@ extension GameManager {
             showConfetti.toggle()
             playSound(named: "applaud")
             playSound(named: "confetti")
-            // Show final results and store score
-            saveScore()
             isFirstGame = false
             guard !isFinalizingGameOver else {
                 logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
@@ -978,4 +978,3 @@ extension GameManager {
         slowpokeTimer = timer
     }
 }
-
