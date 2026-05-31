@@ -550,7 +550,8 @@ extension GameManager {
             isFinalizingGameOver = true
 
             let finishGameOverFinalization: () -> Void = {
-                self.gameState.dealer = self.gameState.playOrder.first
+                // Keep the final round's dealer as the next game's anchor so the
+                // first dealer rotates instead of repeating across games.
                 self.gameState.updatePlayerReferences()
                 self.isFinalizingGameOver = false
                 logger.log("Game-over finalization complete. Returning to waitingToStart.")
