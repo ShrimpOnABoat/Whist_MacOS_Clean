@@ -142,6 +142,12 @@ extension GameManager {
     }
 
     private func applyReceivedOrderedAction(_ action: GameAction) {
+        if shouldHoldActionBehindDeferredNewGame(action) {
+            buffered[action.sequence] = action
+            logger.log("Holding ordered action \(action.type) seq \(action.sequence) until local player joins deferred new game.")
+            return
+        }
+
         switch orderedActionDisposition(for: action) {
         case .deferUntilReady(let reason):
             appendPendingAction(action)
@@ -159,6 +165,22 @@ extension GameManager {
             logger.log("Applying ordered action \(action.type) seq \(action.sequence) despite currentPhase = \(self.gameState.currentPhase) because sequence order is authoritative.")
         }
         processImmediately(action)
+    }
+
+    private func shouldHoldActionBehindDeferredNewGame(_ action: GameAction) -> Bool {
+        guard hasDeferredStartNewGame,
+              gameState.currentPhase == .waitingToStart,
+              let deferredStartNewGameSequence,
+              action.sequence > deferredStartNewGameSequence else {
+            return false
+        }
+
+        return action.type.isDurableOrdered
+    }
+
+    func resumeActionsHeldBehindDeferredNewGame() {
+        deferredStartNewGameSequence = nil
+        drainBufferedOrderedActions()
     }
 
     private func drainBufferedOrderedActions() {
@@ -353,7 +375,7 @@ extension GameManager {
             }
             
         case .startNewGame:
-            self.handleStartNewGameAction(from: action.playerId)
+            self.handleStartNewGameAction(from: action.playerId, sequence: action.sequence)
 
         case .refreshSession:
             logger.log("Received admin refresh session action")

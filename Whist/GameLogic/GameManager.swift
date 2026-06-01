@@ -98,6 +98,7 @@ class GameManager: ObservableObject {
     @Published var showSubtleFailureEffect: Bool = false
     @Published var effectPosition: CGPoint = .zero
     @Published var hasDeferredStartNewGame: Bool = false
+    var deferredStartNewGameSequence: Int?
     @Published var latestGameInsightFacts: [GameInsightFact] = []
     @Published var latestGameAllInsightFacts: [GameInsightFact] = []
     var trumpSelectionsBySuit: [Suit: Int] = [:]
@@ -214,11 +215,12 @@ class GameManager: ObservableObject {
         sendStartNewGameAction()
     }
     
-    func handleStartNewGameAction(from playerId: PlayerId) {
+    func handleStartNewGameAction(from playerId: PlayerId, sequence: Int) {
         if !isFirstGame && gameState.currentPhase == .waitingToStart {
             if playerId != gameState.localPlayer?.id {
                 hasDeferredStartNewGame = true
-                logger.log("Received startNewGame from \(playerId.rawValue) while in waitingToStart. Deferring until local player taps Nouvelle partie.")
+                deferredStartNewGameSequence = sequence
+                logger.log("Received startNewGame from \(playerId.rawValue) seq \(sequence) while in waitingToStart. Deferring until local player taps Nouvelle partie.")
                 return
             }
         }
@@ -1095,6 +1097,8 @@ class GameManager: ObservableObject {
         self.showImpactEffect = false
         self.showSubtleFailureEffect = false
         self.effectPosition = .zero
+        self.hasDeferredStartNewGame = false
+        self.deferredStartNewGameSequence = nil
         self.dealerPosition = .zero
         self.playersScoresUpdated = false
         self.isFirstGame = true

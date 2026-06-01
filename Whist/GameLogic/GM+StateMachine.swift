@@ -701,6 +701,7 @@ extension GameManager {
         logger.log("Starting new game")
         hasDeferredStartNewGame = false
         transition(to: .newGame)
+        resumeActionsHeldBehindDeferredNewGame()
     }
     
     func isLocalPlayerTurnToBet() -> Bool {
