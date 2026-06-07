@@ -47,6 +47,7 @@ enum GamePhase: Encodable, Decodable {
     }
 }
 
+
 extension GameManager {
     var shouldAutoPlayCards: Bool {
         if preferences.autoPlayLastCard, let handCount = gameState.localPlayer?.hand.count, handCount == 1 {
@@ -204,7 +205,9 @@ extension GameManager {
     // MARK: handleStateTransition
     
     private func handleStateTransition() {
-        if processPendingActionsForCurrentPhase() { return }
+        let phasesThatMustRunLocalSetup: Set<GamePhase> = [.newGame, .setupNewRound]
+        if !phasesThatMustRunLocalSetup.contains(gameState.currentPhase),
+           processPendingActionsForCurrentPhase() { return }
         
         guard let localPlayer: Player = gameState.localPlayer else { return }
         
@@ -238,6 +241,7 @@ extension GameManager {
             }
             
         case .waitingToStart:
+            canCatchUp = true
             setPlayerState(to: .startNewGame)
             Task {
                 await self.refreshLatestGameInsights()
@@ -528,6 +532,7 @@ extension GameManager {
                     // if last round, transition to gameOver
                     self.isAwaitingActionCompletionDuringRestore = false
                     if self.gameState.round == 12 {
+                        self.saveScore()
                         self.transition(to: .gameOver)
                     } else { // proceed to the next round
                         self.transition(to: .setupNewRound)
@@ -540,8 +545,6 @@ extension GameManager {
             showConfetti.toggle()
             playSound(named: "applaud")
             playSound(named: "confetti")
-            // Show final results and store score
-            saveScore()
             isFirstGame = false
             guard !isFinalizingGameOver else {
                 logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
@@ -550,7 +553,8 @@ extension GameManager {
             isFinalizingGameOver = true
 
             let finishGameOverFinalization: () -> Void = {
-                self.gameState.dealer = self.gameState.playOrder.first
+                // Keep the final round's dealer as the next game's anchor so the
+                // first dealer rotates instead of repeating across games.
                 self.gameState.updatePlayerReferences()
                 self.isFinalizingGameOver = false
                 logger.log("Game-over finalization complete. Returning to waitingToStart.")
@@ -699,6 +703,7 @@ extension GameManager {
     func startNewGame() {
         logger.log("Starting new game")
         hasDeferredStartNewGame = false
+        releaseActionsHeldBehindDeferredNewGame()
         transition(to: .newGame)
     }
     
@@ -928,9 +933,13 @@ extension GameManager {
             } else if action.type.isDurableOrdered && shouldDeferOrderedAction(action) {
                 logger.log("Ordered action \(action.type) seq \(action.sequence) is still waiting for runtime state to catch up.")
                 pendingActions.append(action)
+            } else if action.type.isDurableOrdered && !isActionValidInCurrentPhase(action.type) {
+                logger.log("Ordered action \(action.type) seq \(action.sequence) is waiting for phase \(gameState.currentPhase) to become valid.")
+                pendingActions.append(action)
             } else if action.type.isDurableOrdered {
                 logger.log("Processing ordered action \(action.type) seq \(action.sequence) from pending queue")
                 processAction(action)
+                promoteReadyBufferedOrderedActionsToPending()
                 atLeastOneActionProcessed = true
             } else if isActionValidInCurrentPhase(action.type) {
                 logger.log("Action \(action.type) seq \(action.sequence) is valid in current phase, processing it")
@@ -978,4 +987,3 @@ extension GameManager {
         slowpokeTimer = timer
     }
 }
-

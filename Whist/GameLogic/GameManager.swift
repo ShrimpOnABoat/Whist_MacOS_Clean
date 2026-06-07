@@ -98,6 +98,9 @@ class GameManager: ObservableObject {
     @Published var showSubtleFailureEffect: Bool = false
     @Published var effectPosition: CGPoint = .zero
     @Published var hasDeferredStartNewGame: Bool = false
+    var deferredStartNewGameSequence: Int?
+    var deferredStartNewGamePayload: GameAction.StartNewGamePayload?
+    var currentGameSessionId: String?
     @Published var latestGameInsightFacts: [GameInsightFact] = []
     @Published var latestGameAllInsightFacts: [GameInsightFact] = []
     var trumpSelectionsBySuit: [Suit: Int] = [:]
@@ -115,6 +118,7 @@ class GameManager: ObservableObject {
     @Published var playersScoresUpdated: Bool = false
     var isFirstGame: Bool = true
     var isFinalizingGameOver: Bool = false
+    var hasStartedFinalScoreSave: Bool = false
     
     // MARK: - Slowpoke Timer Properties
     var slowpokeTimer: DispatchSourceTimer?
@@ -195,40 +199,48 @@ class GameManager: ObservableObject {
     func startNewGameAction() {
         if hasDeferredStartNewGame {
             logger.log("Consuming deferred startNewGame action and starting when local player is ready.")
+            applyStartNewGamePayloadIfPresent(deferredStartNewGamePayload)
+            deferredStartNewGamePayload = nil
             startNewGame()
-            return
-        }
-        if !isFirstGame {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let didPersistSessionAnchor = await self.persistOrderAndDealer()
-                guard didPersistSessionAnchor else {
-                    logger.log("Aborting startNewGame because playOrder/dealer could not be persisted.")
-                    return
-                }
-                self.sendStartNewGameAction()
-            }
             return
         }
         sendStartNewGameAction()
     }
     
-    func handleStartNewGameAction(from playerId: PlayerId) {
+    func handleStartNewGameAction(from playerId: PlayerId, sequence: Int, payload: GameAction.StartNewGamePayload?) {
         if !isFirstGame && gameState.currentPhase == .waitingToStart {
             if playerId != gameState.localPlayer?.id {
                 hasDeferredStartNewGame = true
-                logger.log("Received startNewGame from \(playerId.rawValue) while in waitingToStart. Deferring until local player taps Nouvelle partie.")
+                deferredStartNewGameSequence = sequence
+                deferredStartNewGamePayload = payload
+                logger.log("Received startNewGame from \(playerId.rawValue) seq \(sequence) while in waitingToStart. Deferring until local player taps Nouvelle partie.")
                 return
             }
         }
         
+        applyStartNewGamePayloadIfPresent(payload)
         startNewGame()
+    }
+
+    func applyStartNewGamePayloadIfPresent(_ payload: GameAction.StartNewGamePayload?) {
+        guard let payload else {
+            logger.log("startNewGame has no session payload; using current playOrder/dealer for backward compatibility.")
+            return
+        }
+
+        gameState.playOrder = payload.playOrder
+        gameState.dealer = payload.dealer
+        currentGameSessionId = payload.sessionId
+        gameState.updatePlayerReferences()
+        logger.log("Applied startNewGame session payload \(payload.sessionId): playOrder \(payload.playOrder.map { $0.rawValue }), dealer \(payload.dealer.rawValue).")
     }
     
     // MARK: - Game Logic Functions
     
     func newGame() {
         resetInsightsTrackingForNewGame()
+        hasStartedFinalScoreSave = false
+        lastGameWinner = nil
         gameState.round = 0
         gameState.players.forEach {
             $0.scores.removeAll()
@@ -789,6 +801,13 @@ class GameManager: ObservableObject {
     func saveScore() {
         // Update the game's winner
         lastGameWinner = gameState.players.first { $0.place == 1 }?.id
+
+        guard !hasStartedFinalScoreSave else {
+            logger.log("Final score save already started. Skipping duplicate save.")
+            return
+        }
+
+        hasStartedFinalScoreSave = true
         prepareLatestGameInsightsForCurrentGame()
         
         #if DEBUG
@@ -926,6 +945,12 @@ class GameManager: ObservableObject {
                 return "[\(list)]"
             } else {
                 return "[]"
+            }
+        case .startNewGame:
+            if let payload = try? JSONDecoder().decode(GameAction.StartNewGamePayload.self, from: action.payload) {
+                return "(sessionId: \(payload.sessionId), playOrder: \(payload.playOrder.map { $0.rawValue }), dealer: \(payload.dealer.rawValue))"
+            } else {
+                return "(legacy empty payload)"
             }
         default:
             return ""
@@ -1085,9 +1110,14 @@ class GameManager: ObservableObject {
         self.showImpactEffect = false
         self.showSubtleFailureEffect = false
         self.effectPosition = .zero
+        self.hasDeferredStartNewGame = false
+        self.deferredStartNewGameSequence = nil
+        self.deferredStartNewGamePayload = nil
+        self.currentGameSessionId = nil
         self.dealerPosition = .zero
         self.playersScoresUpdated = false
         self.isFirstGame = true
+        self.hasStartedFinalScoreSave = false
         self.slowpokeTimer?.cancel()
         self.slowpokeTimer = nil
         self.amSlowPoke = false

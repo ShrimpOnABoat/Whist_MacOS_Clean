@@ -142,6 +142,12 @@ extension GameManager {
     }
 
     private func applyReceivedOrderedAction(_ action: GameAction) {
+        if shouldHoldActionBehindDeferredNewGame(action) {
+            buffered[action.sequence] = action
+            logger.log("Holding ordered action \(action.type) seq \(action.sequence) until local player joins deferred new game.")
+            return
+        }
+
         switch orderedActionDisposition(for: action) {
         case .deferUntilReady(let reason):
             appendPendingAction(action)
@@ -161,8 +167,39 @@ extension GameManager {
         processImmediately(action)
     }
 
+    private func shouldHoldActionBehindDeferredNewGame(_ action: GameAction) -> Bool {
+        guard hasDeferredStartNewGame,
+              gameState.currentPhase == .waitingToStart,
+              let deferredStartNewGameSequence,
+              action.sequence > deferredStartNewGameSequence else {
+            return false
+        }
+
+        return action.type.isDurableOrdered
+    }
+
+    func releaseActionsHeldBehindDeferredNewGame() {
+        deferredStartNewGameSequence = nil
+        promoteReadyBufferedOrderedActionsToPending()
+    }
+
+    func promoteReadyBufferedOrderedActionsToPending() {
+        var nextSequence = lastAppliedSequence + 1
+        while let nextAction = buffered[nextSequence] {
+            buffered.removeValue(forKey: nextAction.sequence)
+            appendPendingAction(nextAction)
+            logger.log("Promoted buffered action \(nextAction.type) seq \(nextAction.sequence) to pending queue.")
+            nextSequence += 1
+        }
+    }
+
     private func drainBufferedOrderedActions() {
         while let nextAction = buffered[lastAppliedSequence + 1] {
+            if shouldHoldActionBehindDeferredNewGame(nextAction) {
+                logger.log("Stopping buffered drain at \(nextAction.type) seq \(nextAction.sequence) until local player joins deferred new game.")
+                return
+            }
+
             buffered.removeValue(forKey: nextAction.sequence)
             logger.log("Draining buffered action \(nextAction.type) seq \(nextAction.sequence)")
             applyReceivedOrderedAction(nextAction)
@@ -353,7 +390,8 @@ extension GameManager {
             }
             
         case .startNewGame:
-            self.handleStartNewGameAction(from: action.playerId)
+            let payload = try? JSONDecoder().decode(GameAction.StartNewGamePayload.self, from: action.payload)
+            self.handleStartNewGameAction(from: action.playerId, sequence: action.sequence, payload: payload)
 
         case .refreshSession:
             logger.log("Received admin refresh session action")
@@ -522,8 +560,27 @@ extension GameManager {
     func sendStartNewGameAction(onCommitted: (() -> Void)? = nil) {
         logger.log("Sending start new game action to players")
         guard let localPlayer = gameState.localPlayer else { return }
+        guard !gameState.playOrder.isEmpty else {
+            logger.log("Unable to send startNewGame: playOrder is empty.")
+            return
+        }
+        guard let dealer = gameState.dealer else {
+            logger.log("Unable to send startNewGame: dealer is not defined.")
+            return
+        }
 
-        self.buildActionWithSequence(type: .startNewGame, payload: Data(), playerId: localPlayer.id, onFailed: {
+        let payload = GameAction.StartNewGamePayload(
+            playOrder: gameState.playOrder,
+            dealer: dealer,
+            sessionId: UUID().uuidString
+        )
+
+        guard let payloadData = try? JSONEncoder().encode(payload) else {
+            logger.log("Unable to encode startNewGame payload.")
+            return
+        }
+
+        self.buildActionWithSequence(type: .startNewGame, payload: payloadData, playerId: localPlayer.id, onFailed: {
             logger.log("Unable to build startNewGame action.")
         }) { action in
             self.persistAndSend(action, onCommitted: onCommitted)
