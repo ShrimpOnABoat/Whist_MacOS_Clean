@@ -99,6 +99,8 @@ class GameManager: ObservableObject {
     @Published var effectPosition: CGPoint = .zero
     @Published var hasDeferredStartNewGame: Bool = false
     var deferredStartNewGameSequence: Int?
+    var deferredStartNewGamePayload: GameAction.StartNewGamePayload?
+    var currentGameSessionId: String?
     @Published var latestGameInsightFacts: [GameInsightFact] = []
     @Published var latestGameAllInsightFacts: [GameInsightFact] = []
     var trumpSelectionsBySuit: [Suit: Int] = [:]
@@ -197,35 +199,40 @@ class GameManager: ObservableObject {
     func startNewGameAction() {
         if hasDeferredStartNewGame {
             logger.log("Consuming deferred startNewGame action and starting when local player is ready.")
+            applyStartNewGamePayloadIfPresent(deferredStartNewGamePayload)
+            deferredStartNewGamePayload = nil
             startNewGame()
-            return
-        }
-        if !isFirstGame {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let didPersistSessionAnchor = await self.persistOrderAndDealer()
-                guard didPersistSessionAnchor else {
-                    logger.log("Aborting startNewGame because playOrder/dealer could not be persisted.")
-                    return
-                }
-                self.sendStartNewGameAction()
-            }
             return
         }
         sendStartNewGameAction()
     }
     
-    func handleStartNewGameAction(from playerId: PlayerId, sequence: Int) {
+    func handleStartNewGameAction(from playerId: PlayerId, sequence: Int, payload: GameAction.StartNewGamePayload?) {
         if !isFirstGame && gameState.currentPhase == .waitingToStart {
             if playerId != gameState.localPlayer?.id {
                 hasDeferredStartNewGame = true
                 deferredStartNewGameSequence = sequence
+                deferredStartNewGamePayload = payload
                 logger.log("Received startNewGame from \(playerId.rawValue) seq \(sequence) while in waitingToStart. Deferring until local player taps Nouvelle partie.")
                 return
             }
         }
         
+        applyStartNewGamePayloadIfPresent(payload)
         startNewGame()
+    }
+
+    func applyStartNewGamePayloadIfPresent(_ payload: GameAction.StartNewGamePayload?) {
+        guard let payload else {
+            logger.log("startNewGame has no session payload; using current playOrder/dealer for backward compatibility.")
+            return
+        }
+
+        gameState.playOrder = payload.playOrder
+        gameState.dealer = payload.dealer
+        currentGameSessionId = payload.sessionId
+        gameState.updatePlayerReferences()
+        logger.log("Applied startNewGame session payload \(payload.sessionId): playOrder \(payload.playOrder.map { $0.rawValue }), dealer \(payload.dealer.rawValue).")
     }
     
     // MARK: - Game Logic Functions
@@ -939,6 +946,12 @@ class GameManager: ObservableObject {
             } else {
                 return "[]"
             }
+        case .startNewGame:
+            if let payload = try? JSONDecoder().decode(GameAction.StartNewGamePayload.self, from: action.payload) {
+                return "(sessionId: \(payload.sessionId), playOrder: \(payload.playOrder.map { $0.rawValue }), dealer: \(payload.dealer.rawValue))"
+            } else {
+                return "(legacy empty payload)"
+            }
         default:
             return ""
         }
@@ -1099,6 +1112,8 @@ class GameManager: ObservableObject {
         self.effectPosition = .zero
         self.hasDeferredStartNewGame = false
         self.deferredStartNewGameSequence = nil
+        self.deferredStartNewGamePayload = nil
+        self.currentGameSessionId = nil
         self.dealerPosition = .zero
         self.playersScoresUpdated = false
         self.isFirstGame = true

@@ -205,7 +205,9 @@ extension GameManager {
     // MARK: handleStateTransition
     
     private func handleStateTransition() {
-        if processPendingActionsForCurrentPhase() { return }
+        let phasesThatMustRunLocalSetup: Set<GamePhase> = [.newGame, .setupNewRound]
+        if !phasesThatMustRunLocalSetup.contains(gameState.currentPhase),
+           processPendingActionsForCurrentPhase() { return }
         
         guard let localPlayer: Player = gameState.localPlayer else { return }
         
@@ -239,6 +241,7 @@ extension GameManager {
             }
             
         case .waitingToStart:
+            canCatchUp = true
             setPlayerState(to: .startNewGame)
             Task {
                 await self.refreshLatestGameInsights()
@@ -700,8 +703,8 @@ extension GameManager {
     func startNewGame() {
         logger.log("Starting new game")
         hasDeferredStartNewGame = false
+        releaseActionsHeldBehindDeferredNewGame()
         transition(to: .newGame)
-        resumeActionsHeldBehindDeferredNewGame()
     }
     
     func isLocalPlayerTurnToBet() -> Bool {
@@ -930,9 +933,13 @@ extension GameManager {
             } else if action.type.isDurableOrdered && shouldDeferOrderedAction(action) {
                 logger.log("Ordered action \(action.type) seq \(action.sequence) is still waiting for runtime state to catch up.")
                 pendingActions.append(action)
+            } else if action.type.isDurableOrdered && !isActionValidInCurrentPhase(action.type) {
+                logger.log("Ordered action \(action.type) seq \(action.sequence) is waiting for phase \(gameState.currentPhase) to become valid.")
+                pendingActions.append(action)
             } else if action.type.isDurableOrdered {
                 logger.log("Processing ordered action \(action.type) seq \(action.sequence) from pending queue")
                 processAction(action)
+                promoteReadyBufferedOrderedActionsToPending()
                 atLeastOneActionProcessed = true
             } else if isActionValidInCurrentPhase(action.type) {
                 logger.log("Action \(action.type) seq \(action.sequence) is valid in current phase, processing it")

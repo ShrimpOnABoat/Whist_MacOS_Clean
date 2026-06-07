@@ -8,6 +8,12 @@
 import Foundation
 
 struct GameAction: Codable {
+    struct StartNewGamePayload: Codable {
+        let playOrder: [PlayerId]
+        let dealer: PlayerId
+        let sessionId: String
+    }
+
     struct Context: Codable {
         let round: Int
         let trickIndex: Int?
