@@ -40,16 +40,19 @@ struct CardView: View {
                 Image("Card_back")
                     .resizable()
                     .scaledToFit()
-                    .cornerRadius(4)
+                    .cornerRadius(5)
             } else {
                 Image("\(card.suit.rawValue)_\(card.rank.rawValue)")
                     .resizable()
                     .scaledToFit()
-                    .cornerRadius(4)
+                    .colorMultiply(GameVisualStyle.cardFaceTint)
+                    .saturation(0.96)
+                    .cornerRadius(5)
                     .brightness(shouldGreyOut ? -0.3 : 0) // Slightly darken non-matching suits
             }
         }
         .frame(width: dynamicSize.cardWidth, height: dynamicSize.cardHeight)
+        .shadow(color: GameVisualStyle.cardShadow, radius: card.isFaceDown ? 7 : 5, x: 0, y: card.isFaceDown ? 5 : 3)
         .overlay(
             ZStack {
                 if isSelected {

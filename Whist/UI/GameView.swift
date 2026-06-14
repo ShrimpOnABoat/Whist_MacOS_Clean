@@ -50,10 +50,10 @@ struct GameView: View {
         // Create the background view
         let newBackground = AnyView(FeltBackgroundView(
             baseColorIndex: randomIndex,
-            radialShadingStrength: 0.5,
+            radialShadingStrength: 0.58,
             wearIntensity: wear,
-            motifVisibility: motif ? 0.25 : 0,
-            motifScale: 0.5,
+            motifVisibility: motif ? 0.13 : 0,
+            motifScale: 0.42,
             showScratches: Bool.random()
         ))
         // Update UI on the main thread
@@ -108,12 +108,19 @@ struct GameView: View {
                     }
                 }
                 .frame(width: size, height: size)
-                .background(isOn ? accent() : Color.white.opacity(0.5))
-                .cornerRadius(8)
-                .shadow(radius: 5)
+                .background(
+                    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                        .fill(isOn ? accent() : Color.white.opacity(0.52))
+                        .background(
+                            RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 5)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isOn ? accent() : Color.white, lineWidth: 2)
+                    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                        .strokeBorder(isOn ? Color.white.opacity(0.7) : GameVisualStyle.glassStroke, lineWidth: 1.2)
                 )
             }
             .buttonStyle(HoverMoveUpButtonStyle(isActive: isEnabled))
@@ -213,7 +220,7 @@ struct GameView: View {
                                                 // Display a background for the last trick
                                                 ZStack {
                                                     RoundedRectangle(cornerRadius: 12)
-                                                        .fill(Color.white.opacity(0.5)) // Background with opacity
+                                                        .fill(GameVisualStyle.glassFill) // Background with opacity
                                                         .overlay(
                                                             VStack {
                                                                 Text(gameManager.gameState.lastTrick.isEmpty ? "Pas de dernier pli" : "Dernier pli")
@@ -225,7 +232,7 @@ struct GameView: View {
                                                         )
                                                         .overlay(
                                                             RoundedRectangle(cornerRadius: 12)
-                                                                .stroke(Color.white, lineWidth: 2) // Add a white border
+                                                                .stroke(GameVisualStyle.glassStroke, lineWidth: 1.2) // Add a white border
                                                         )
                                                 }
                                                 

@@ -42,14 +42,15 @@ struct TableView: View {
                             }) {
                                 Text("Nouvelle partie")
                                     .font(.system(size: 18, weight: .semibold))
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 14)
-                                    .background(Color.green.opacity(0.9))
+                                    .padding(.vertical, 9)
+                                    .padding(.horizontal, 16)
+                                    .background(GameVisualStyle.primaryAccent)
                                     .foregroundColor(.white)
-                                    .cornerRadius(9)
+                                    .clipShape(Capsule(style: .continuous))
+                                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 9)
-                                            .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+                                        Capsule(style: .continuous)
+                                            .strokeBorder(Color.white.opacity(0.7), lineWidth: 1.2)
                                     )
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -100,12 +101,12 @@ struct TableView: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 14)
-                                        .background(Color.white.opacity(0.18))
+                                        .background(GameVisualStyle.glassFill)
                                         .foregroundColor(.white)
-                                        .cornerRadius(9)
+                                        .clipShape(Capsule(style: .continuous))
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 9)
-                                                .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
+                                            Capsule(style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.7), lineWidth: 1.2)
                                         )
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -117,12 +118,12 @@ struct TableView: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 14)
-                                        .background(Color.green.opacity(0.9))
+                                        .background(GameVisualStyle.primaryAccent)
                                         .foregroundColor(.white)
-                                        .cornerRadius(9)
+                                        .clipShape(Capsule(style: .continuous))
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 9)
-                                                .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+                                            Capsule(style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.75), lineWidth: 1.2)
                                         )
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -134,12 +135,12 @@ struct TableView: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .padding(.vertical, 8)
                                         .padding(.horizontal, 14)
-                                        .background(Color.white.opacity(0.18))
+                                        .background(GameVisualStyle.glassFill)
                                         .foregroundColor(.white)
-                                        .cornerRadius(9)
+                                        .clipShape(Capsule(style: .continuous))
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 9)
-                                                .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
+                                            Capsule(style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.7), lineWidth: 1.2)
                                         )
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -149,14 +150,18 @@ struct TableView: View {
                         .padding(.vertical, 20)
                         .padding(.horizontal, 22)
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.green.opacity(0.8))
-                                .shadow(radius: 12)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.black.opacity(0.24))
+                                .background(
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.white.opacity(0.5), lineWidth: 1.2)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.36), lineWidth: 1.1)
                         )
+                        .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
                         .transition(.scale)
                         .sheet(isPresented: $showAllInsights) {
                             VStack(alignment: .leading, spacing: 12) {

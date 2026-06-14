@@ -343,16 +343,23 @@ struct PlayerView: View {
                     }
                 }) {
                     Text(discardString(numberOfCardsToDiscard: numberOfCardsToDiscard))
-                        .font(.system(size: dynamicSize.stateTextSize))
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
-                        .background(selectedCount == numberOfCardsToDiscard ? Color.green : Color.white.opacity(0.5))
+                        .font(.system(size: dynamicSize.stateTextSize, weight: .semibold))
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 13)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(selectedCount == numberOfCardsToDiscard ? GameVisualStyle.primaryAccent : GameVisualStyle.glassFill)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
+                        )
                         .foregroundColor(selectedCount == numberOfCardsToDiscard ? Color.white : Color.black)
-                        .cornerRadius(5)
-                        .shadow(radius: 5)
+                        .clipShape(Capsule(style: .continuous))
+                        .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 5)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(selectedCount == numberOfCardsToDiscard ? Color.green : Color.white, lineWidth: 2)
+                            Capsule(style: .continuous)
+                                .strokeBorder(selectedCount == numberOfCardsToDiscard ? Color.white.opacity(0.7) : GameVisualStyle.glassStroke, lineWidth: 1.2)
                         )
                 }
                 .buttonStyle(HoverMoveUpButtonStyle(isActive: selectedCount == numberOfCardsToDiscard))
@@ -408,15 +415,23 @@ struct PlayerView: View {
             VStack {
                 if !stateMessage.isEmpty {
                     Text(stateMessage)
-                        .font(.system(size: dynamicSize.stateTextSize))
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
-                        .background(Color.white.opacity(0.5))
-                        .cornerRadius(5)
-                        .shadow(radius: 5)
+                        .font(.system(size: dynamicSize.stateTextSize, weight: .medium))
+                        .foregroundColor(.black.opacity(0.78))
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 12)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(GameVisualStyle.glassFill)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
+                        )
+                        .clipShape(Capsule(style: .continuous))
+                        .shadow(color: Color.black.opacity(0.18), radius: 9, x: 0, y: 5)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(Color.white, lineWidth: 2)
+                            Capsule(style: .continuous)
+                                .strokeBorder(GameVisualStyle.glassStroke, lineWidth: 1.1)
                         )
                         .transition(.opacity.combined(with: .scale))
                         .animation(.easeInOut(duration: 0.3), value: player.state)
@@ -525,8 +540,8 @@ struct PlayerView: View {
     @ViewBuilder
     private func PlaceholderTrick(dynamicSize: DynamicSize) -> some View {
         RoundedRectangle(cornerRadius: 4)
-            .strokeBorder(Color.gray, style: StrokeStyle(lineWidth: 2))
-            .opacity(0.8)
+            .strokeBorder(Color.white.opacity(0.38), style: StrokeStyle(lineWidth: 1.5))
+            .opacity(0.9)
 //            .blendMode(.multiply)
             .frame(width: dynamicSize.cardHeight * GameConstants.trickScale,
                    height: dynamicSize.cardWidth * GameConstants.trickScale)
@@ -575,13 +590,32 @@ struct PlayerImageView: View {
     @EnvironmentObject var gameManager: GameManager
     let player: Player
     var dynamicSize: DynamicSize
+
+    private var avatarColor: Color {
+        GameVisualStyle.playerAccent(for: player.id)
+    }
+
+    private var avatarHighlight: Color {
+        GameVisualStyle.playerAccentHighlight(for: player.id)
+    }
+
+    private var avatarShadow: Color {
+        GameVisualStyle.playerAccentShadow(for: player.id)
+    }
+
+    private var isActionRequired: Bool {
+        player.state == .playing ||
+        player.state == .bidding ||
+        player.state == .discarding ||
+        player.state == .choosingTrump
+    }
     
     var body: some View {
         VStack {
             // Player Picture
             if player.isP2PConnected || player.tablePosition == .local {
                 ZStack {
-                    (player.imageBackgroundColor ?? Color.gray)
+                    avatarBackground
                     
                     (player.image ?? Image(systemName: "person.crop.circle"))
                         .resizable()
@@ -589,25 +623,76 @@ struct PlayerImageView: View {
                 }
                 .frame(width: dynamicSize.playerImageWidth, height: dynamicSize.playerImageHeight)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                .overlay(avatarInnerStroke(opacity: 0.9))
+                .overlay(actionRing)
+                .shadow(color: Color.black.opacity(0.28), radius: 11, x: 0, y: 6)
             } else {
                 ZStack {
-                    (player.imageBackgroundColor ?? Color.gray)
+                    avatarBackground
                     (player.image ?? Image(systemName: "person.crop.circle"))
                         .resizable()
                         .scaledToFit()
                 }
                 .frame(width: dynamicSize.playerImageWidth, height: dynamicSize.playerImageHeight)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                .overlay(avatarInnerStroke(opacity: 0.72))
+                .shadow(color: Color.black.opacity(0.22), radius: 9, x: 0, y: 5)
                 .grayscale(1.0)
             }
             
             // Player Username
             Text(player.username)
-                .font(.headline)
+                .font(.system(size: max(11, dynamicSize.proportion * 14), weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
+                .shadow(color: GameVisualStyle.labelShadow, radius: 3, x: 0, y: 1)
         }
+    }
+
+    private var avatarBackground: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        avatarHighlight,
+                        avatarColor,
+                        avatarShadow
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                Circle()
+                    .fill(Color.white.opacity(0.16))
+                    .blendMode(.softLight)
+            )
+            .overlay(
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.white.opacity(0.18),
+                                Color.clear,
+                                Color.black.opacity(0.24)
+                            ],
+                            center: .init(x: 0.34, y: 0.24),
+                            startRadius: 2,
+                            endRadius: dynamicSize.playerImageWidth * 0.58
+                        )
+                    )
+            )
+    }
+
+    private func avatarInnerStroke(opacity: Double) -> some View {
+        Circle()
+            .strokeBorder(Color.white.opacity(opacity), lineWidth: 2)
+    }
+
+    private var actionRing: some View {
+        Circle()
+            .strokeBorder(isActionRequired ? avatarColor : Color.clear, lineWidth: 3)
+            .padding(-3)
+            .shadow(color: isActionRequired ? avatarColor.opacity(0.46) : Color.clear, radius: 8, x: 0, y: 0)
     }
 }
 

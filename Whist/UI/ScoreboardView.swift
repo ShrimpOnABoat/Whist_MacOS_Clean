@@ -32,7 +32,8 @@ struct ScoreBoardView: View {
             // Round number
             Text("Tour \(roundString)")
                 .font(.system(size: dynamicSize.roundSize))
-                .fontWeight(.bold)
+                .fontWeight(.semibold)
+                .foregroundColor(.black.opacity(0.82))
 
             // Header row: Player IDs
             HStack {
@@ -45,7 +46,8 @@ struct ScoreBoardView: View {
                         }
                         Text(id.displayName)
                             .font(.system(size: dynamicSize.nameSize))
-                            .bold(true)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.black.opacity(0.78))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -74,11 +76,13 @@ struct ScoreBoardView: View {
                         HStack {
                             Text("\(tricks)")
                                 .font(.system(size: dynamicSize.scoreSize))
+                                .foregroundColor(.black.opacity(0.68))
                             
                             HStack(spacing: 0) {
                                 Text("\(score)")
                                     .font(.system(size: dynamicSize.scoreSize))
-                                    .fontWeight(.bold)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.black.opacity(0.86))
                                 if player.onlyWinsBonus {
                                     Text("+5")
                                         .font(.system(size: dynamicSize.scoreSize * 0.6))
@@ -130,26 +134,21 @@ struct ScoreBoardView: View {
                 }
             }
         }
-        .padding()
-        .background(Color.white.opacity(0.5))
-        .cornerRadius(12)
-        .shadow(radius: 5)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(scoreboardBorderColor(for: gameManager), lineWidth: 2)
-        )
+        .padding(.vertical, dynamicSize.proportion * 14)
+        .padding(.horizontal, dynamicSize.proportion * 18)
+        .gameGlassPanel(cornerRadius: 16, strokeColor: scoreboardBorderColor(for: gameManager), fillOpacity: 0.94)
     }
     
     private func scoreboardBorderColor(for gameManager: GameManager) -> Color {
         // Default neutral border
         let round = gameManager.gameState.round
         guard round >= 4 && gameManager.allPlayersBet() else {
-            return Color.white
+            return GameVisualStyle.glassStroke
         }
         
         let diff = betsDiff(for: gameManager)
         if diff == 0 {
-            return Color.white
+            return GameVisualStyle.glassStroke
         }
         
         // Slightly stronger border for readability

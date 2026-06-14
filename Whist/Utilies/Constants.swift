@@ -26,16 +26,16 @@ struct GameConstants {
     
     // Background related constants
     static let feltColors: [Color] = [
-        Color(red: 34 / 255, green: 139 / 255, blue: 34 / 255), // Classic Green
-        Color(red: 0 / 255, green: 0 / 255, blue: 139 / 255),   // Deep Blue
-        Color(red: 139 / 255, green: 0 / 255, blue: 0 / 255),   // Wine Red
-        Color(red: 75 / 255, green: 0 / 255, blue: 130 / 255),  // Royal Purple
-        Color(red: 0 / 255, green: 128 / 255, blue: 128 / 255), // Teal
-        Color(red: 54 / 255, green: 69 / 255, blue: 79 / 255),  // Charcoal Gray
-        Color(red: 205 / 255, green: 92 / 255, blue: 0 / 255),  // Burnt Orange
-        Color(red: 34 / 255, green: 90 / 255, blue: 34 / 255),  // Forest Green
-        Color(red: 139 / 255, green: 69 / 255, blue: 19 / 255), // Chocolate Brown
-        Color(red: 220 / 255, green: 20 / 255, blue: 60 / 255)  // Crimson Red
+        Color(red: 27 / 255, green: 97 / 255, blue: 50 / 255),   // Classic Green
+        Color(red: 12 / 255, green: 32 / 255, blue: 96 / 255),   // Deep Blue
+        Color(red: 106 / 255, green: 24 / 255, blue: 30 / 255),  // Wine Red
+        Color(red: 56 / 255, green: 18 / 255, blue: 91 / 255),   // Royal Purple
+        Color(red: 20 / 255, green: 98 / 255, blue: 100 / 255),  // Teal
+        Color(red: 45 / 255, green: 54 / 255, blue: 62 / 255),   // Charcoal Gray
+        Color(red: 144 / 255, green: 73 / 255, blue: 24 / 255),  // Burnt Orange
+        Color(red: 27 / 255, green: 72 / 255, blue: 38 / 255),   // Forest Green
+        Color(red: 105 / 255, green: 59 / 255, blue: 31 / 255),  // Chocolate Brown
+        Color(red: 172 / 255, green: 41 / 255, blue: 54 / 255)   // Crimson Red
     ]
 }
 

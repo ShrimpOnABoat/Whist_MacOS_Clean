@@ -60,10 +60,42 @@ struct FeltBackgroundView: View {
                 // 1. Base texture image – color filled then masked by alpha-only noise texture
                 GameConstants.feltColors[baseColorIndex]
                     .overlay(
+                        LinearGradient(
+                            colors: [
+                                GameVisualStyle.tableHighlight,
+                                Color.clear,
+                                Color.black.opacity(0.18)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .blendMode(.softLight)
+                    )
+                    .overlay(
                         Image("noiseTexture-4-alpha")
                             .resizable(resizingMode: .tile)
+                            .opacity(0.42)
                             .blendMode(.multiply)
                     )
+                    .overlay(
+                        Color.black.opacity(0.10)
+                            .blendMode(.multiply)
+                    )
+                    .overlay(
+                        Color(red: 0.78, green: 0.35, blue: 0.20)
+                            .opacity(0.06)
+                            .blendMode(.softLight)
+                    )
+
+                FeltFiberOverlay()
+                    .opacity(0.28)
+                    .blendMode(.softLight)
+                    .allowsHitTesting(false)
+
+                FeltGrainOverlay()
+                    .opacity(0.16)
+                    .blendMode(.overlay)
+                    .allowsHitTesting(false)
                 
                 // 3. Wear & Tear Overlays
                 if wearIntensity > 0 {
@@ -152,30 +184,108 @@ struct FeltBackgroundView: View {
                     }
                 }
                 
-                // 5. Radial shading for depth
+                // 5. Center glow and edge vignette for table depth
                 RadialGradient(
                     gradient: Gradient(colors: [
-                        Color.clear,
-                        Color.black.opacity(radialShadingStrength * 0.6)
+                        Color.white.opacity(0.20),
+                        Color.white.opacity(0.06),
+                        Color.clear
                     ]),
-                    center: .center,
-                    startRadius: 50,
-                    endRadius: min(geometry.size.width, geometry.size.height) / 1.5
+                    center: .init(x: 0.52, y: 0.48),
+                    startRadius: 10,
+                    endRadius: min(geometry.size.width, geometry.size.height) / 1.15
+                )
+                .blendMode(.softLight)
+
+                RadialGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: Color.clear, location: 0.0),
+                        .init(color: Color.clear, location: 0.46),
+                        .init(color: Color.black.opacity(radialShadingStrength * 0.26), location: 0.72),
+                        .init(color: Color.black.opacity(radialShadingStrength * 0.72), location: 1.0)
+                    ]),
+                    center: .init(x: 0.52, y: 0.50),
+                    startRadius: 0,
+                    endRadius: max(geometry.size.width, geometry.size.height) * 0.72
                 )
                 .blendMode(.multiply)
                 
                 RadialGradient(
                     gradient: Gradient(colors: [
                         .clear,
-                        .black.opacity(radialShadingStrength * 0.3)
+                        .black.opacity(radialShadingStrength * 0.20)
                     ]),
-                    center: .init(x: 0.55, y: 0.5),
-                    startRadius: 30,
-                    endRadius: min(geometry.size.width, geometry.size.height) / 1.6
+                    center: .init(x: 0.55, y: 0.48),
+                    startRadius: min(geometry.size.width, geometry.size.height) * 0.25,
+                    endRadius: min(geometry.size.width, geometry.size.height) / 1.55
                 )
                 .blendMode(.multiply)
             }
             .edgesIgnoringSafeArea(.all)
+        }
+    }
+}
+
+// MARK: - Felt Material Overlays
+
+struct FeltFiberOverlay: View {
+    var body: some View {
+        Canvas { context, size in
+            let diagonalCount = Int((size.width + size.height) / 18)
+
+            for index in -diagonalCount...diagonalCount {
+                let offset = CGFloat(index) * 18
+                var path = Path()
+                path.move(to: CGPoint(x: offset, y: 0))
+                path.addLine(to: CGPoint(x: offset + size.height * 0.55, y: size.height))
+
+                let opacity = index.isMultiple(of: 3) ? 0.08 : 0.035
+                context.stroke(
+                    path,
+                    with: .color(Color.white.opacity(opacity)),
+                    lineWidth: index.isMultiple(of: 4) ? 1.2 : 0.7
+                )
+            }
+
+            for index in -diagonalCount...diagonalCount {
+                let offset = CGFloat(index) * 22
+                var path = Path()
+                path.move(to: CGPoint(x: offset, y: size.height))
+                path.addLine(to: CGPoint(x: offset + size.height * 0.42, y: 0))
+
+                context.stroke(
+                    path,
+                    with: .color(Color.black.opacity(index.isMultiple(of: 2) ? 0.05 : 0.025)),
+                    lineWidth: 0.8
+                )
+            }
+        }
+    }
+}
+
+struct FeltGrainOverlay: View {
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 13
+            let columns = Int(size.width / spacing) + 2
+            let rows = Int(size.height / spacing) + 2
+
+            for row in 0..<rows {
+                for column in 0..<columns {
+                    let seed = (row * 73 + column * 37) % 97
+                    let jitterX = CGFloat(seed % 9) - 4
+                    let jitterY = CGFloat((seed * 5) % 9) - 4
+                    let x = CGFloat(column) * spacing + jitterX
+                    let y = CGFloat(row) * spacing + jitterY
+                    let radius = CGFloat((seed % 4) + 1) * 0.35
+                    let opacity = Double((seed % 6) + 2) / 100
+
+                    context.fill(
+                        Path(ellipseIn: CGRect(x: x, y: y, width: radius, height: radius)),
+                        with: .color(seed.isMultiple(of: 2) ? Color.white.opacity(opacity) : Color.black.opacity(opacity))
+                    )
+                }
+            }
         }
     }
 }

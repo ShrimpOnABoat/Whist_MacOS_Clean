@@ -13,27 +13,32 @@ struct DealerButton: View {
     
     var body: some View {
         ZStack {
-            // Outer shadow
             Circle()
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.2), radius: size * 0.12, x: size * 0.06, y: size * 0.06)
+                .fill(.ultraThinMaterial)
                 .frame(width: size, height: size)
-            
-            // Inner gradient for the 3D effect
-            Circle()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color.white, Color.gray.opacity(1)]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                .overlay(
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.white.opacity(0.74),
+                                    Color.white.opacity(0.34),
+                                    Color.black.opacity(0.12)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 )
-                .frame(width: size, height: size)
-            
-            // "D" letter
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.62), lineWidth: 1.2)
+                )
+                .shadow(color: Color.black.opacity(0.24), radius: size * 0.18, x: 0, y: size * 0.08)
+
             Text("DEALER")
-                .font(.system(size: size * 0.2, weight: .bold))
-                .foregroundColor(.black)
+                .font(.system(size: size * 0.18, weight: .bold, design: .rounded))
+                .foregroundColor(.black.opacity(0.78))
         }
         .background(Color.clear)
     }
