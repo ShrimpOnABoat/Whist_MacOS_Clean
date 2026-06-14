@@ -1096,6 +1096,8 @@ class GameManager: ObservableObject {
         self.isShuffling = false
         self.isDeckReady = false
         self.isDeckReceived = false
+        self.showOptions = false
+        self.showLastTrick = false
         self.buffered.removeAll()
         self.lastAppliedSequence = 0
         self.catchUpWorkItem?.cancel()
@@ -1160,11 +1162,18 @@ class GameManager: ObservableObject {
             if let saved = snapshot[p.id] {
                 p.connectionPhase = saved.connectionPhase
                 p.firebasePresenceOnline = saved.firebaseOnline
-                p.state = saved.state
+                p.state = preferFreshLobbyOnEmptyRestore ? .idle : saved.state
             }
         }
         // Publish so avatars recolor immediately
         self.objectWillChange.send()
+
+        if preferFreshLobbyOnEmptyRestore {
+            logger.log("Game clear detected. Rebuilding setup flow for a clean new-game lobby.")
+            self.canCatchUp = true
+            self.transition(to: .setPlayOrder)
+            return
+        }
         
         // 4) Proceed with restore
         Task { [weak self] in
@@ -1176,13 +1185,7 @@ class GameManager: ObservableObject {
                     // Enable catch-up for game clear scenarios to ensure proper synchronization
                     self.canCatchUp = true
 
-                    // A requested fresh-lobby rebuild must not depend on transient bootstrap playOrder.
-                    if preferFreshLobbyOnEmptyRestore {
-                        logger.log("Game clear detected. Transitioning to waitingForPlayers to force full synchronization.")
-                        self.transition(to: .waitingForPlayers)
-                    } else {
-                        self.transition(to: .setPlayOrder)
-                    }
+                    self.transition(to: .setPlayOrder)
                 }
             }
         }

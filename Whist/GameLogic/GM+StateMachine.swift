@@ -271,6 +271,9 @@ extension GameManager {
             
         case .renderingDeck:
             setPlayerState(to: .idle)
+            DispatchQueue.main.async {
+                self.checkDeckMeasurementReadiness(reason: "entered renderingDeck from state machine")
+            }
             // Mark that the deck is NOT measured yet
             //            isDeckReady = false
             
@@ -592,7 +595,8 @@ extension GameManager {
             logger.log("Not doing anything")
             
         case .setPlayOrder:
-            if gameState.playOrder == [] {
+            let hasAuthoritativePlayOrder = gameState.localPlayer?.id == .toto || lastAppliedSequence > 0
+            if gameState.playOrder == [] || !hasAuthoritativePlayOrder {
                 logger.log("PlayOrder not set yet. Waiting in .setPlayOrder...")
             } else {
                 logger.log("PlayOrder initialized! Moving to .setupGame")

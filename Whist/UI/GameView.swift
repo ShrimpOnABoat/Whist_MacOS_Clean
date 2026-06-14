@@ -439,13 +439,28 @@ struct GameView: View {
                     gameManager.cardStates[cardID] = cardState
                 }
                 
-                // If all deck cards are now measured,
-                // let the GameManager know we’re ready to deal.
-                if !didMeasureDeck && transforms.count == (gameManager.gameState.deck.count + gameManager.gameState.trumpCards.count) {
+                let expectedDeckCardIds = Set((gameManager.gameState.deck + gameManager.gameState.trumpCards).map(\.id))
+                let measuredCardIds = Set(gameManager.cardStates.keys)
+
+                if gameManager.gameState.currentPhase == .renderingDeck {
+                    let missingDeckCardIds = expectedDeckCardIds.subtracting(measuredCardIds)
+                    logger.log(
+                        "Deck measurement debug: phase=\(gameManager.gameState.currentPhase), didMeasureDeck=\(didMeasureDeck), expected=\(expectedDeckCardIds.count), measured=\(measuredCardIds.count), missing=\(missingDeckCardIds.count)"
+                    )
+                    if !missingDeckCardIds.isEmpty {
+                        logger.log("Deck measurement missing ids: \(missingDeckCardIds.sorted().prefix(8).joined(separator: ", "))")
+                    }
+                }
+
+                // If all deck cards are now measured, let the GameManager know we’re ready to deal.
+                if !didMeasureDeck &&
+                    gameManager.gameState.currentPhase == .renderingDeck &&
+                    !expectedDeckCardIds.isEmpty &&
+                    expectedDeckCardIds.isSubset(of: measuredCardIds) {
                     logger.log("Setting didMeasureDeck to true")
                     didMeasureDeck = true
-                    gameManager.onDeckMeasured()
                 }
+                gameManager.checkDeckMeasurementReadiness(reason: "card transform preference changed")
                 
                 // Iterate through moving cards to check if any placeholder positions are captured
                 for movingCard in gameManager.movingCards {
@@ -484,6 +499,15 @@ struct GameView: View {
             .onChange(of: preferences.selectedFeltIndex) { _ in
                 logger.log("Preferences changed: selectedFeltIndex updated, refreshing background")
                 refreshBackground()
+            }
+            .onChange(of: gameManager.gameState.currentPhase) { phase in
+                if phase == .renderingDeck {
+                    logger.log("Deck measurement debug: entering renderingDeck; resetting didMeasureDeck")
+                    didMeasureDeck = false
+                    DispatchQueue.main.async {
+                        gameManager.checkDeckMeasurementReadiness(reason: "entered renderingDeck from GameView")
+                    }
+                }
             }
             // End GeometryReader
             if gameManager.isRestoring {
@@ -596,4 +620,3 @@ struct GridOverlay: View {
         }
     }
 }
-

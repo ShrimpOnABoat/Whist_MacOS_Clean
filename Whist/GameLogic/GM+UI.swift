@@ -30,10 +30,31 @@ enum CardPlace: String {
 }
 
 extension GameManager {
+
+    func checkDeckMeasurementReadiness(reason: String) {
+        guard gameState.currentPhase == .renderingDeck, !isDeckReady else { return }
+
+        let expectedDeckCardIds = Set((gameState.deck + gameState.trumpCards).map(\.id))
+        guard !expectedDeckCardIds.isEmpty else {
+            logger.log("Deck measurement debug: \(reason), no deck cards to measure yet.")
+            return
+        }
+
+        let measuredCardIds = Set(cardStates.keys)
+        let missingDeckCardIds = expectedDeckCardIds.subtracting(measuredCardIds)
+        logger.log(
+            "Deck measurement debug: \(reason), expected=\(expectedDeckCardIds.count), measured=\(measuredCardIds.count), missing=\(missingDeckCardIds.count)"
+        )
+        if !missingDeckCardIds.isEmpty {
+            logger.log("Deck measurement missing ids: \(missingDeckCardIds.sorted().prefix(8).joined(separator: ", "))")
+            return
+        }
+
+        onDeckMeasured()
+    }
     
     func onDeckMeasured() {
-        // If we’re in .renderingDeck, flip the flag and check the state
-//        guard gameState.currentPhase == .renderingDeck else { return }
+        guard gameState.currentPhase == .renderingDeck else { return }
         
         isDeckReady = true
         logger.log("checkAndAdvanceStateIfNeeded from onDeckMeasured")
