@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 import simd
 
 // MARK: - Advanced Felt View
@@ -57,8 +58,8 @@ struct FeltBackgroundView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // 1. Base texture image – color filled then masked by alpha-only noise texture
-                GameConstants.feltColors[baseColorIndex]
+                // 1. Procedural felt material: color, mottling, fiber noise, and grain.
+                ProceduralFeltMaterial(baseColorIndex: baseColorIndex)
                     .overlay(
                         LinearGradient(
                             colors: [
@@ -74,7 +75,7 @@ struct FeltBackgroundView: View {
                     .overlay(
                         Image("noiseTexture-4-alpha")
                             .resizable(resizingMode: .tile)
-                            .opacity(0.42)
+                            .opacity(0.18)
                             .blendMode(.multiply)
                     )
                     .overlay(
@@ -87,16 +88,6 @@ struct FeltBackgroundView: View {
                             .blendMode(.softLight)
                     )
 
-                FeltFiberOverlay()
-                    .opacity(0.28)
-                    .blendMode(.softLight)
-                    .allowsHitTesting(false)
-
-                FeltGrainOverlay()
-                    .opacity(0.16)
-                    .blendMode(.overlay)
-                    .allowsHitTesting(false)
-                
                 // 3. Wear & Tear Overlays
                 if wearIntensity > 0 {
                     HandWearOverlay(wearIntensity: wearIntensity)
@@ -226,38 +217,221 @@ struct FeltBackgroundView: View {
     }
 }
 
-// MARK: - Felt Material Overlays
+// MARK: - Felt Material
+
+struct ProceduralFeltMaterial: View {
+    let baseColorIndex: Int
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let image = FeltTextureCache.image(
+                size: geometry.size,
+                baseColorIndex: baseColorIndex
+            ) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+            } else {
+                GameConstants.feltColors[baseColorIndex]
+            }
+        }
+    }
+}
+
+private enum FeltTextureCache {
+    private static let cache = NSCache<NSString, NSImage>()
+
+    static func image(size: CGSize, baseColorIndex: Int) -> NSImage? {
+        let maxDimension: CGFloat = 960
+        let scale = min(1, maxDimension / max(size.width, size.height, 1))
+        let pixelWidth = max(8, Int((size.width * scale).rounded()))
+        let pixelHeight = max(8, Int((size.height * scale).rounded()))
+        let key = "natural-v2-\(baseColorIndex)-\(pixelWidth)x\(pixelHeight)" as NSString
+
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        guard let image = makeTexture(width: pixelWidth, height: pixelHeight, baseColorIndex: baseColorIndex) else {
+            return nil
+        }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func makeTexture(width: Int, height: Int, baseColorIndex: Int) -> NSImage? {
+        guard
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: width,
+                pixelsHigh: height,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: width * 4,
+                bitsPerPixel: 32
+            ),
+            let data = rep.bitmapData
+        else {
+            return nil
+        }
+
+        let base = nsColor(for: baseColorIndex)
+        let red = Double(base.redComponent)
+        let green = Double(base.greenComponent)
+        let blue = Double(base.blueComponent)
+        let longestSide = Double(max(width, height))
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let nx = Double(x) / longestSide
+                let ny = Double(y) / longestSide
+
+                let warpX = fbm(nx * 1.45 + 12.7, ny * 1.45 + 4.1, octaves: 4, seed: 17) * 0.22
+                let warpY = fbm(nx * 1.35 + 1.3, ny * 1.35 + 9.8, octaves: 4, seed: 29) * 0.22
+
+                let broadMottle = rotatedFBM(nx + warpX, ny + warpY, scaleX: 2.4, scaleY: 2.1, angle: 0.31, octaves: 6, seed: 3)
+                let broadMottleB = rotatedFBM(nx - warpY * 0.8, ny + warpX * 0.8, scaleX: 3.3, scaleY: 2.7, angle: -0.48, octaves: 5, seed: 23)
+                let midMottle = rotatedFBM(nx + warpY * 0.7, ny + warpX * 0.7, scaleX: 8.8, scaleY: 7.4, angle: 0.17, octaves: 4, seed: 37)
+                let fineMottle = fbm(nx * 28.0 + warpY, ny * 28.0 + warpX, octaves: 4, seed: 41)
+                let fiberA = rotatedNoise(nx + warpX * 0.18, ny + warpY * 0.18, scaleX: 34, scaleY: 118, angle: 0.22, seed: 71)
+                let fiberB = rotatedNoise(nx - warpY * 0.14, ny + warpX * 0.14, scaleX: 96, scaleY: 42, angle: -0.34, seed: 83)
+                let grain = hash(x, y, seed: 101)
+                let fineGrain = hash(x * 3 + y, y * 5 - x, seed: 131)
+
+                let broadBlend = broadMottle * 0.62 + broadMottleB * 0.38
+                let mottle = broadBlend * 0.58 + midMottle * 0.30 + fineMottle * 0.12
+                let mottleFactor = (broadBlend - 0.5) * 0.125
+                let midFactor = (midMottle - 0.5) * 0.082
+                let fineFactor = (fineMottle - 0.5) * 0.045
+                let fiberFactor = ((fiberA - 0.5) * 0.026) + ((fiberB - 0.5) * 0.020)
+                let grainFactor = (grain - 0.5) * 0.052 + (fineGrain - 0.5) * 0.026
+                let value = 1.0 + mottleFactor + midFactor + fineFactor + fiberFactor + grainFactor
+
+                let warmShift = 0.018 + (mottle - 0.5) * 0.018
+                let coolShadow = max(0, 0.5 - mottle) * 0.025
+
+                let offset = (y * width + x) * 4
+                data[offset] = UInt8(clamp((red * value + warmShift) * 255, min: 0, max: 255))
+                data[offset + 1] = UInt8(clamp((green * (value - coolShadow)) * 255, min: 0, max: 255))
+                data[offset + 2] = UInt8(clamp((blue * (value - warmShift * 0.6)) * 255, min: 0, max: 255))
+                data[offset + 3] = 255
+            }
+        }
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.addRepresentation(rep)
+        return image
+    }
+
+    private static func nsColor(for baseColorIndex: Int) -> NSColor {
+        let color = NSColor(GameConstants.feltColors[baseColorIndex])
+        return color.usingColorSpace(.deviceRGB) ?? NSColor(red: 0.42, green: 0.10, blue: 0.12, alpha: 1)
+    }
+
+    private static func fbm(_ x: Double, _ y: Double, octaves: Int, seed: Int) -> Double {
+        var value = 0.0
+        var amplitude = 0.5
+        var frequency = 1.0
+        var normalization = 0.0
+
+        for octave in 0..<octaves {
+            value += amplitude * valueNoise(x * frequency, y * frequency, seed: seed + octave * 19)
+            normalization += amplitude
+            amplitude *= 0.5
+            frequency *= 2.0
+        }
+
+        return value / max(normalization, 0.0001)
+    }
+
+    private static func valueNoise(_ x: Double, _ y: Double, seed: Int) -> Double {
+        let x0 = Int(floor(x))
+        let y0 = Int(floor(y))
+        let xf = x - Double(x0)
+        let yf = y - Double(y0)
+        let u = smoothstep(xf)
+        let v = smoothstep(yf)
+
+        let a = hash(x0, y0, seed: seed)
+        let b = hash(x0 + 1, y0, seed: seed)
+        let c = hash(x0, y0 + 1, seed: seed)
+        let d = hash(x0 + 1, y0 + 1, seed: seed)
+
+        return mix(mix(a, b, u), mix(c, d, u), v)
+    }
+
+    private static func rotatedNoise(_ x: Double, _ y: Double, scaleX: Double, scaleY: Double, angle: Double, seed: Int) -> Double {
+        let cosAngle = cos(angle)
+        let sinAngle = sin(angle)
+        let rx = x * cosAngle - y * sinAngle
+        let ry = x * sinAngle + y * cosAngle
+        return valueNoise(rx * scaleX, ry * scaleY, seed: seed)
+    }
+
+    private static func rotatedFBM(_ x: Double, _ y: Double, scaleX: Double, scaleY: Double, angle: Double, octaves: Int, seed: Int) -> Double {
+        let cosAngle = cos(angle)
+        let sinAngle = sin(angle)
+        let rx = x * cosAngle - y * sinAngle
+        let ry = x * sinAngle + y * cosAngle
+        return fbm(rx * scaleX, ry * scaleY, octaves: octaves, seed: seed)
+    }
+
+    private static func hash(_ x: Int, _ y: Int, seed: Int) -> Double {
+        let value = sin(Double(x) * 127.1 + Double(y) * 311.7 + Double(seed) * 74.7) * 43758.5453123
+        return value - floor(value)
+    }
+
+    private static func smoothstep(_ t: Double) -> Double {
+        t * t * t * (t * (t * 6 - 15) + 10)
+    }
+
+    private static func mix(_ a: Double, _ b: Double, _ t: Double) -> Double {
+        a + (b - a) * t
+    }
+
+    private static func clamp(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
+        Swift.max(minValue, Swift.min(maxValue, value))
+    }
+}
 
 struct FeltFiberOverlay: View {
     var body: some View {
         Canvas { context, size in
-            let diagonalCount = Int((size.width + size.height) / 18)
+            let spacing: CGFloat = 18
+            let columns = Int(size.width / spacing) + 2
+            let rows = Int(size.height / spacing) + 2
 
-            for index in -diagonalCount...diagonalCount {
-                let offset = CGFloat(index) * 18
-                var path = Path()
-                path.move(to: CGPoint(x: offset, y: 0))
-                path.addLine(to: CGPoint(x: offset + size.height * 0.55, y: size.height))
+            for row in 0..<rows {
+                for column in 0..<columns {
+                    let seed = (row * 917 + column * 613) % 997
+                    let x = CGFloat(column) * spacing + CGFloat(seed % 13) - 6
+                    let y = CGFloat(row) * spacing + CGFloat((seed * 7) % 13) - 6
+                    let length = CGFloat(5 + seed % 13)
+                    let angleDegrees = CGFloat((seed % 7) - 3) * 9 + CGFloat((seed / 7) % 5) * 2
+                    let angle = angleDegrees * .pi / 180
+                    let dx = cos(angle) * length
+                    let dy = sin(angle) * length
 
-                let opacity = index.isMultiple(of: 3) ? 0.08 : 0.035
-                context.stroke(
-                    path,
-                    with: .color(Color.white.opacity(opacity)),
-                    lineWidth: index.isMultiple(of: 4) ? 1.2 : 0.7
-                )
-            }
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: y))
+                    path.addLine(to: CGPoint(x: x + dx, y: y + dy))
 
-            for index in -diagonalCount...diagonalCount {
-                let offset = CGFloat(index) * 22
-                var path = Path()
-                path.move(to: CGPoint(x: offset, y: size.height))
-                path.addLine(to: CGPoint(x: offset + size.height * 0.42, y: 0))
-
-                context.stroke(
-                    path,
-                    with: .color(Color.black.opacity(index.isMultiple(of: 2) ? 0.05 : 0.025)),
-                    lineWidth: 0.8
-                )
+                    let isLightFiber = seed.isMultiple(of: 3)
+                    let opacity = isLightFiber
+                        ? Double((seed % 5) + 4) / 100
+                        : Double((seed % 4) + 3) / 100
+                    context.stroke(
+                        path,
+                        with: .color(isLightFiber ? Color.white.opacity(opacity) : Color.black.opacity(opacity)),
+                        lineWidth: CGFloat(seed % 3 == 0 ? 0.75 : 0.45)
+                    )
+                }
             }
         }
     }
@@ -266,7 +440,7 @@ struct FeltFiberOverlay: View {
 struct FeltGrainOverlay: View {
     var body: some View {
         Canvas { context, size in
-            let spacing: CGFloat = 13
+            let spacing: CGFloat = 9
             let columns = Int(size.width / spacing) + 2
             let rows = Int(size.height / spacing) + 2
 
@@ -277,8 +451,8 @@ struct FeltGrainOverlay: View {
                     let jitterY = CGFloat((seed * 5) % 9) - 4
                     let x = CGFloat(column) * spacing + jitterX
                     let y = CGFloat(row) * spacing + jitterY
-                    let radius = CGFloat((seed % 4) + 1) * 0.35
-                    let opacity = Double((seed % 6) + 2) / 100
+                    let radius = CGFloat((seed % 4) + 1) * 0.42
+                    let opacity = Double((seed % 8) + 4) / 100
 
                     context.fill(
                         Path(ellipseIn: CGRect(x: x, y: y, width: radius, height: radius)),
