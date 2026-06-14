@@ -54,6 +54,7 @@ class GameManager: ObservableObject {
     var connectionAttemptTimers: [PlayerId: Timer] = [:]
     var iceDisconnectionTimers: [PlayerId: Timer] = [:]
     var p2pReconnectRetryCounts: [PlayerId: Int] = [:]
+    var activeP2PAttemptIds: [PlayerId: String] = [:]
     let iceDisconnectionRecoveryTimeout: TimeInterval = 10.0
     let maxP2PReconnectAttempts: Int = 5
     let baseP2PReconnectDelay: TimeInterval = 1.0

@@ -16,9 +16,9 @@ class FirebaseSignalingManager {
     static let shared = FirebaseSignalingManager()
     
     // Callbacks for GameManager
-    var onOfferReceived: ((_ fromId: PlayerId, _ sdp: RTCSessionDescription) -> Void)?
-    var onAnswerReceived: ((_ fromId: PlayerId, _ sdp: RTCSessionDescription) -> Void)?
-    var onRemoteIceCandidateReceived: ((_ fromId: PlayerId, _ candidate: RTCIceCandidate) -> Void)?
+    var onOfferReceived: ((_ fromId: PlayerId, _ sdp: RTCSessionDescription, _ attemptId: String) -> Void)?
+    var onAnswerReceived: ((_ fromId: PlayerId, _ sdp: RTCSessionDescription, _ attemptId: String) -> Void)?
+    var onRemoteIceCandidateReceived: ((_ fromId: PlayerId, _ candidate: RTCIceCandidate, _ attemptId: String) -> Void)?
     
     private var listenerRegistrations: [ListenerRegistration] = []
     private let db = Firestore.firestore()
@@ -30,40 +30,61 @@ class FirebaseSignalingManager {
     private var pendingIceCandidateStringsByDocId: [String: [String]] = [:]
     private var iceFlushWorkItemsByDocId: [String: DispatchWorkItem] = [:]
     private let iceBatchDebounce: TimeInterval = 0.3
+    private let signalingDocumentTTL: TimeInterval = 120.0
     
     var validateSession: ((_ peerId: PlayerId, _ incomingSessionId: String?) -> Bool)?
     
     func documentName(from: PlayerId, to: PlayerId) -> String {
         return "\(from.rawValue)_to_\(to.rawValue)"
     }
+
+    func isSignalingDataFresh(_ data: [String: Any], docId: String) -> Bool {
+        guard let updatedAt = data["updatedAt"] as? Timestamp else {
+            logger.logRTC("Firebase [\(docId)]: Missing updatedAt. Ignoring stale or legacy signaling document.")
+            return false
+        }
+
+        let age = Date().timeIntervalSince(updatedAt.dateValue())
+        guard age <= signalingDocumentTTL else {
+            logger.logRTC("Firebase [\(docId)]: Ignoring stale signaling document. Age=\(String(format: "%.1f", age))s, ttl=\(signalingDocumentTTL)s.")
+            return false
+        }
+
+        return true
+    }
     
-    func sendOffer(from senderId: PlayerId, to receiverId: PlayerId, sdp: RTCSessionDescription, sessionId: String) async throws {
+    func sendOffer(from senderId: PlayerId, to receiverId: PlayerId, sdp: RTCSessionDescription, sessionId: String, attemptId: String) async throws {
         let docId = documentName(from: senderId, to: receiverId)
         let offerData: [String: Any] = [
             "offer": sdp.sdp,
-            "sessionId": sessionId
+            "sessionId": sessionId,
+            "attemptId": attemptId,
+            "updatedAt": FieldValue.serverTimestamp()
         ]
-        logger.logRTC("Firebase [\(docId)]: Sending offer")
+        logger.logRTC("Firebase [\(docId)]: Sending offer attempt=\(attemptId)")
         try await db.collection("signaling").document(docId).setData(offerData, merge: true)
     }
     
-    func sendAnswer(from senderId: PlayerId, to receiverId: PlayerId, sdp: RTCSessionDescription, sessionId: String) async throws {
+    func sendAnswer(from senderId: PlayerId, to receiverId: PlayerId, sdp: RTCSessionDescription, sessionId: String, attemptId: String) async throws {
         let docId = documentName(from: senderId, to: receiverId)
         let answerData: [String: Any] = [
             "answer": sdp.sdp,
-            "sessionId": sessionId
+            "sessionId": sessionId,
+            "attemptId": attemptId,
+            "updatedAt": FieldValue.serverTimestamp()
         ]
-        logger.logRTC("Firebase [\(docId)]: Sending answer")
+        logger.logRTC("Firebase [\(docId)]: Sending answer attempt=\(attemptId)")
         try await db.collection("signaling").document(docId).setData(answerData, merge: true)
     }
     
-    func sendIceCandidate(from senderId: PlayerId, to receiverId: PlayerId, candidate: RTCIceCandidate, sessionId: String) async throws {
+    func sendIceCandidate(from senderId: PlayerId, to receiverId: PlayerId, candidate: RTCIceCandidate, sessionId: String, attemptId: String) async throws {
         let docId = documentName(from: senderId, to: receiverId)
         let candidateDict: [String: String] = [
             "sdp": candidate.sdp,
             "sdpMid": candidate.sdpMid ?? "",
             "sdpMLineIndex": String(candidate.sdpMLineIndex),
-            "sid": sessionId
+            "sid": sessionId,
+            "aid": attemptId
         ]
         guard let candidateData = try? JSONEncoder().encode(candidateDict),
               let candidateString = String(data: candidateData, encoding: .utf8) else {
@@ -147,6 +168,32 @@ class FirebaseSignalingManager {
         }
         logger.logRTC("Firebase: Cleared signaling documents between \(localPlayerId.rawValue) and \(peerId.rawValue)")
     }
+
+    func clearIncomingSignalingDocumentIfSessionMatches(from peerId: PlayerId, to localPlayerId: PlayerId, staleSessionId: String) async {
+        let docId = documentName(from: peerId, to: localPlayerId)
+        let docRef = db.collection("signaling").document(docId)
+
+        do {
+            try await db.runTransaction { transaction, errorPointer -> Any? in
+                do {
+                    let snapshot = try transaction.getDocument(docRef)
+                    guard let data = snapshot.data(),
+                          let currentSessionId = data["sessionId"] as? String,
+                          currentSessionId == staleSessionId else {
+                        return nil
+                    }
+                    transaction.deleteDocument(docRef)
+                    return nil
+                } catch {
+                    errorPointer?.pointee = error as NSError
+                    return nil
+                }
+            }
+            logger.logRTC("Firebase [\(docId)]: Cleared stale incoming signaling document for sessionId=\(staleSessionId)")
+        } catch {
+            logger.log("Firebase [\(docId)]: Failed to clear stale incoming signaling document: \(error.localizedDescription)")
+        }
+    }
     
     deinit {
         listenerRegistrations.forEach { $0.remove() }
@@ -169,6 +216,8 @@ class FirebaseSignalingManager {
             return
         }
 
+        guard isSignalingDataFresh(data, docId: docId) else { return }
+
         processOfferIfNeeded(from: fromId, docId: docId, data: data)
         processAnswerIfNeeded(from: fromId, docId: docId, data: data)
         processIceCandidatesIfNeeded(from: fromId, docId: docId, data: data)
@@ -184,6 +233,10 @@ class FirebaseSignalingManager {
             logger.logRTC("Ignoring OFFER from \(fromId) due to Session ID mismatch or missing.")
             return
         }
+        guard let attemptId = data["attemptId"] as? String, !attemptId.isEmpty else {
+            logger.logRTC("Offer listener: missing attemptId for doc \(docId). Skipping.")
+            return
+        }
 
         let shouldProcess = listenerStateQueue.sync { () -> Bool in
             if lastProcessedOfferByDocId[docId] == offerSdp { return false }
@@ -192,9 +245,9 @@ class FirebaseSignalingManager {
         }
         guard shouldProcess else { return }
 
-        logger.logRTC("✅ VALID Session OFFER received from \(fromId).")
+        logger.logRTC("✅ VALID Session OFFER received from \(fromId), attempt=\(attemptId).")
         let remoteSdp = RTCSessionDescription(type: .offer, sdp: offerSdp)
-        onOfferReceived?(fromId, remoteSdp)
+        onOfferReceived?(fromId, remoteSdp, attemptId)
     }
 
     private func processAnswerIfNeeded(from fromId: PlayerId, docId: String, data: [String: Any]) {
@@ -206,6 +259,10 @@ class FirebaseSignalingManager {
         guard validateSession?(fromId, incomingSessionId) ?? true else {
             return
         }
+        guard let attemptId = data["attemptId"] as? String, !attemptId.isEmpty else {
+            logger.logRTC("Answer listener: missing attemptId for doc \(docId). Skipping.")
+            return
+        }
 
         let shouldProcess = listenerStateQueue.sync { () -> Bool in
             if lastProcessedAnswerByDocId[docId] == answerSdp { return false }
@@ -214,9 +271,9 @@ class FirebaseSignalingManager {
         }
         guard shouldProcess else { return }
 
-        logger.logRTC("✅ VALID Session ANSWER received from \(fromId).")
+        logger.logRTC("✅ VALID Session ANSWER received from \(fromId), attempt=\(attemptId).")
         let remoteSdp = RTCSessionDescription(type: .answer, sdp: answerSdp)
-        onAnswerReceived?(fromId, remoteSdp)
+        onAnswerReceived?(fromId, remoteSdp, attemptId)
     }
 
     private func processIceCandidatesIfNeeded(from fromId: PlayerId, docId: String, data: [String: Any]) {
@@ -243,6 +300,10 @@ class FirebaseSignalingManager {
                 logger.logRTC("ICE listener: candidate missing sid for doc \(docId). Skipping candidate.")
                 continue
             }
+            guard let attemptId = json["aid"], !attemptId.isEmpty else {
+                logger.logRTC("ICE listener: candidate missing aid for doc \(docId). Skipping candidate.")
+                continue
+            }
             guard validateSession?(fromId, incomingSid) ?? true else {
                 continue
             }
@@ -255,8 +316,8 @@ class FirebaseSignalingManager {
             }
 
             let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: idx, sdpMid: sdpMid)
-            logger.logRTC("Received ICE Candidate from \(fromId.rawValue). Invoking onRemoteIceCandidateReceived callback.")
-            onRemoteIceCandidateReceived?(fromId, candidate)
+            logger.logRTC("Received ICE Candidate from \(fromId.rawValue), attempt=\(attemptId). Invoking onRemoteIceCandidateReceived callback.")
+            onRemoteIceCandidateReceived?(fromId, candidate, attemptId)
         }
     }
 
@@ -282,7 +343,8 @@ class FirebaseSignalingManager {
         Task {
             do {
                 let candidateDataForFirestore: [String: Any] = [
-                    "iceCandidates": FieldValue.arrayUnion(candidateStrings)
+                    "iceCandidates": FieldValue.arrayUnion(candidateStrings),
+                    "updatedAt": FieldValue.serverTimestamp()
                 ]
                 logger.logRTC("Firebase [\(docId)]: Sending \(candidateStrings.count) ICE candidate(s)")
                 try await db.collection("signaling").document(docId).setData(candidateDataForFirestore, merge: true)
