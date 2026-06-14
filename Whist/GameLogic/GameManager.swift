@@ -556,7 +556,7 @@ class GameManager: ObservableObject {
         
         // Check if bet legal
         if !(bet > -1 && bet <= max(gameState.round - 2, 1)) {
-            logger.fatalErrorAndLog("Received a illegal bet from \(playerId) with \(bet) at round \(gameState.round).")
+            logger.fatalErrorAndLog("Received an illegal bet from \(playerId) with \(bet) at round \(gameState.round).")
         }
 
         // Set the player's bet
