@@ -56,6 +56,11 @@ private struct FeltLightingTuning {
     static let secondaryEdgeOpacity = 0.46
 }
 
+private struct FeltTextureQuality {
+    static let maxDimension: CGFloat = 640
+    static let sizeBucket: CGFloat = 128
+}
+
 // MARK: - Advanced Felt View
 
 //struct AdvancedFeltView: View {
@@ -167,53 +172,12 @@ struct FeltBackgroundView: View {
                     let tileW = motifSize + spacing
                     let tileH = motifSize + spacing
                     // Generate a two-column offset tile image
-                    if let tileCGImage = {
-                        let renderer = ImageRenderer(content:
-                                                        Canvas { context, _ in
-                            let motifImage = Image(systemName: motif)
-                            // Draw in first column (no offset)
-                            let rect1a = CGRect(
-                                x: 0,
-                                y: 0,
-                                width: motifSize,
-                                height: motifSize
-                            )
-                            context.draw(motifImage, in: rect1a)
-                            let rect1b = CGRect(
-                                x: 0,
-                                y: tileH,
-                                width: motifSize,
-                                height: motifSize
-                            )
-                            context.draw(motifImage, in: rect1b)
-                            
-                            // Draw in second column, offset half motif vertically
-                            let rect2a = CGRect(
-                                x: tileW,
-                                y: -(tileH / 2),
-                                width: motifSize,
-                                height: motifSize
-                            )
-                            context.draw(motifImage, in: rect2a)
-                            let rect2b = CGRect(
-                                x: tileW,
-                                y: tileH / 2,
-                                width: motifSize,
-                                height: motifSize
-                            )
-                            context.draw(motifImage, in: rect2b)
-                            let rect2c = CGRect(
-                                x: tileW,
-                                y: tileH * 1.5,
-                                width: motifSize,
-                                height: motifSize
-                            )
-                            context.draw(motifImage, in: rect2c)
-                        }
-                            .frame(width: tileW * 2, height: tileH * 2)
-                        )
-                        return renderer.cgImage
-                    }() {
+                    if let tileCGImage = FeltMotifTileCache.image(
+                        motif: motif,
+                        motifSize: motifSize,
+                        tileWidth: tileW,
+                        tileHeight: tileH
+                    ) {
                         Image(decorative: tileCGImage, scale: 1)
                             .resizable(resizingMode: .tile)
                             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -266,6 +230,40 @@ struct FeltBackgroundView: View {
     }
 }
 
+private enum FeltMotifTileCache {
+    private static let cache = NSCache<NSString, NSImage>()
+
+    @MainActor
+    static func image(motif: String, motifSize: CGFloat, tileWidth: CGFloat, tileHeight: CGFloat) -> CGImage? {
+        let roundedMotifSize = (motifSize * 10).rounded() / 10
+        let key = "\(motif)-\(roundedMotifSize)" as NSString
+
+        if let cached = cache.object(forKey: key) {
+            return cached.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
+
+        let renderer = ImageRenderer(content:
+            Canvas { context, _ in
+                let motifImage = Image(systemName: motif)
+                context.draw(motifImage, in: CGRect(x: 0, y: 0, width: motifSize, height: motifSize))
+                context.draw(motifImage, in: CGRect(x: 0, y: tileHeight, width: motifSize, height: motifSize))
+                context.draw(motifImage, in: CGRect(x: tileWidth, y: -(tileHeight / 2), width: motifSize, height: motifSize))
+                context.draw(motifImage, in: CGRect(x: tileWidth, y: tileHeight / 2, width: motifSize, height: motifSize))
+                context.draw(motifImage, in: CGRect(x: tileWidth, y: tileHeight * 1.5, width: motifSize, height: motifSize))
+            }
+            .frame(width: tileWidth * 2, height: tileHeight * 2)
+        )
+
+        guard let cgImage = renderer.cgImage else {
+            return nil
+        }
+
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: tileWidth * 2, height: tileHeight * 2))
+        cache.setObject(image, forKey: key)
+        return cgImage
+    }
+}
+
 // MARK: - Felt Material
 
 struct ProceduralFeltMaterial: View {
@@ -294,10 +292,9 @@ private enum FeltTextureCache {
     private static let cache = NSCache<NSString, NSImage>()
 
     static func image(size: CGSize, baseColorIndex: Int) -> NSImage? {
-        let maxDimension: CGFloat = 960
-        let scale = min(1, maxDimension / max(size.width, size.height, 1))
-        let pixelWidth = max(8, Int((size.width * scale).rounded()))
-        let pixelHeight = max(8, Int((size.height * scale).rounded()))
+        let sourceSize = normalizedTextureSize(for: size)
+        let pixelWidth = Int(sourceSize.width)
+        let pixelHeight = Int(sourceSize.height)
         let key = "natural-v5-\(baseColorIndex)-\(pixelWidth)x\(pixelHeight)" as NSString
 
         if let cached = cache.object(forKey: key) {
@@ -309,6 +306,24 @@ private enum FeltTextureCache {
         }
         cache.setObject(image, forKey: key)
         return image
+    }
+
+    private static func normalizedTextureSize(for size: CGSize) -> CGSize {
+        let width = max(size.width, 1)
+        let height = max(size.height, 1)
+        let longestSide = max(width, height)
+        let scale = min(1, FeltTextureQuality.maxDimension / longestSide)
+        let scaledWidth = width * scale
+        let scaledHeight = height * scale
+
+        return CGSize(
+            width: bucketedDimension(scaledWidth),
+            height: bucketedDimension(scaledHeight)
+        )
+    }
+
+    private static func bucketedDimension(_ dimension: CGFloat) -> CGFloat {
+        max(128, (dimension / FeltTextureQuality.sizeBucket).rounded() * FeltTextureQuality.sizeBucket)
     }
 
     private static func makeTexture(width: Int, height: Int, baseColorIndex: Int) -> NSImage? {
