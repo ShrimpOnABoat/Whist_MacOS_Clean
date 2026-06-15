@@ -33,7 +33,14 @@ struct GameView: View {
     @State private var showRoundHistory: Bool = false
     @State private var didMeasureDeck: Bool = false
     @State private var background: AnyView = AnyView(EmptyView())
+    @State private var backgroundBaseColorIndex: Int = 0
     @State private var isHonkOnCooldown: Bool = false
+    @State private var gameStateRefreshTick: Int = 0
+    
+    private var shouldShowPostGameOverlay: Bool {
+        gameManager.gameState.currentPhase == .waitingToStart &&
+        gameManager.showPostGameResultScreen
+    }
     
     func refreshBackground() {
         logger.log("Refreshing backgroung")
@@ -57,6 +64,7 @@ struct GameView: View {
             showScratches: Bool.random()
         ))
         // Update UI on the main thread
+        self.backgroundBaseColorIndex = randomIndex
         self.background = newBackground
         logger.log("Finished executing background refresh")
     }
@@ -134,11 +142,25 @@ struct GameView: View {
         ZStack {
             GeometryReader { geometry in
                 let dynamicSize = DynamicSize(from: geometry)
-                // Extract players from the game state
-                if let localPlayer = gameManager.gameState.localPlayer,
-                   let leftPlayer = gameManager.gameState.leftPlayer,
-                   let rightPlayer = gameManager.gameState.rightPlayer,
-                   let dealer = gameManager.gameState.dealer {
+                if shouldShowPostGameOverlay {
+                    ZStack {
+                        background
+
+                        GameResultView(
+                            gameState: gameManager.gameState,
+                            showRoundHistory: $showRoundHistory,
+                            feltColorIndex: backgroundBaseColorIndex,
+                            dynamicSize: dynamicSize
+                        )
+
+                        ConfettiCannon(trigger: $gameManager.showConfetti, num: 100)
+                            .ignoresSafeArea()
+                            .transition(.opacity)
+                    }
+                } else if let localPlayer = gameManager.gameState.localPlayer,
+                          let leftPlayer = gameManager.gameState.leftPlayer,
+                          let rightPlayer = gameManager.gameState.rightPlayer,
+                          let dealer = gameManager.gameState.dealer {
                     // Proceed with your ZStack and layout
                     ZStack {
                         // Background
@@ -205,14 +227,14 @@ struct GameView: View {
                                                         gameState: gameManager.gameState,
                                                         dynamicSize: dynamicSize,
                                                         showRoundHistory: $showRoundHistory,
-                                                        showWaitingPanelInPlace: gameManager.isFirstGame
+                                                        showWaitingPanelInPlace: !shouldShowPostGameOverlay
                                                     )
                                                 } else {
                                                     TableView(
                                                         gameState: gameManager.gameState,
                                                         dynamicSize: dynamicSize,
                                                         showRoundHistory: $showRoundHistory,
-                                                        showWaitingPanelInPlace: gameManager.isFirstGame,
+                                                        showWaitingPanelInPlace: !shouldShowPostGameOverlay,
                                                         mode: .trumps
                                                     )
                                                 }
@@ -297,143 +319,126 @@ struct GameView: View {
                     }
                 }
                 
-                // MARK: Dealer button
-                DealerButton(size: dynamicSize.dealerButtonSize)
-                    .position(gameManager.dealerPosition)
-                    .animation(.easeOut, value: gameManager.dealerPosition)
-                
-                // MARK: Show last trick
-                if gameManager.showLastTrick && gameManager.gameState.currentPhase == .playingTricks {
-                    ZStack {
-                        if !gameManager.gameState.lastTrick.isEmpty {
-                            GeometryReader { geometry in
-                                ZStack {
-                                    ForEach(gameManager.gameState.lastTrickCardStates.sorted(by: { $0.value.zIndex < $1.value.zIndex }), id: \.key) { playerId, cardState in
-                                        if let card = gameManager.gameState.lastTrick[playerId] {
-                                            TransformableCardView(
-                                                card: card,
-                                                rotation: cardState.rotation,
-                                                xOffset: cardState.position.x,
-                                                yOffset: cardState.position.y,
-                                                dynamicSize: dynamicSize
-                                            )
-                                            .zIndex(cardState.zIndex) // Apply the stored z-index
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .frame(width: dynamicSize.tableWidth, height: dynamicSize.tableHeight)
-                    .animation(.easeInOut, value: gameManager.showLastTrick)
-                }
-                
-                // Overlay Moving Cards
-                ForEach(gameManager.movingCards) { movingCard in
-                    MovingCardView(movingCard: movingCard, dynamicSize: dynamicSize)
-                        .environmentObject(gameManager)
-                }
-                
-                // MARK: - Slowpoke & AutoPilot
-                VStack {
-                    Spacer()
-                    HStack(alignment: .bottom, spacing: 16) {
-                        #if DEBUG
-                        InsetTableButton(
-                            systemName: "hare.fill",
-                            imageName: nil,
-                            size: dynamicSize.dealerButtonSize,
-                            isOn: gameManager.debugAutoPlayAllSteps,
-                            accent: { .orange },
-                            isEnabled: true
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.1)) {
-                                gameManager.setDebugAutoPlayAllStepsEnabled(!gameManager.debugAutoPlayAllSteps)
-                            }
-                        }
-                        #endif
-
-                        if [.playingTricks, .grabTrick].contains(gameManager.gameState.currentPhase) {
-                            InsetTableButton(
-                                systemName: "bolt.fill",
-                                imageName: nil,
-                                size: dynamicSize.dealerButtonSize,
-                                isOn: gameManager.autoPilot,
-                                accent: { .green },
-                                isEnabled: true
-                            )
-                            {
-                                withAnimation(.easeInOut(duration: 0.1)) {
-                                    gameManager.autoPilot.toggle()
-                                    if gameManager.autoPilot {
-                                        if let localPlayer = gameManager.gameState.localPlayer {
-                                            if localPlayer.announcedTricks.count > localPlayer.madeTricks.count {
-                                                gameManager.autoPilotShouldWinTricks = true
+                if !shouldShowPostGameOverlay {
+                    // MARK: Dealer button
+                    DealerButton(size: dynamicSize.dealerButtonSize)
+                        .position(gameManager.dealerPosition)
+                        .animation(.easeOut, value: gameManager.dealerPosition)
+                    
+                    // MARK: Show last trick
+                    if gameManager.showLastTrick && gameManager.gameState.currentPhase == .playingTricks {
+                        ZStack {
+                            if !gameManager.gameState.lastTrick.isEmpty {
+                                GeometryReader { geometry in
+                                    ZStack {
+                                        ForEach(gameManager.gameState.lastTrickCardStates.sorted(by: { $0.value.zIndex < $1.value.zIndex }), id: \.key) { playerId, cardState in
+                                            if let card = gameManager.gameState.lastTrick[playerId] {
+                                                TransformableCardView(
+                                                    card: card,
+                                                    rotation: cardState.rotation,
+                                                    xOffset: cardState.position.x,
+                                                    yOffset: cardState.position.y,
+                                                    dynamicSize: dynamicSize
+                                                )
+                                                .zIndex(cardState.zIndex) // Apply the stored z-index
                                             }
                                         }
                                     }
                                 }
                             }
-                        } else {
-                            Circle()
-                                .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
-                                .opacity(0)
                         }
-                        
-                        
-                        
-                        if gameManager.isSlowPoke.values.contains(true) {
-                            if !isHonkOnCooldown {
+                        .frame(width: dynamicSize.tableWidth, height: dynamicSize.tableHeight)
+                        .animation(.easeInOut, value: gameManager.showLastTrick)
+                    }
+                    
+                    // Overlay Moving Cards
+                    ForEach(gameManager.movingCards) { movingCard in
+                        MovingCardView(movingCard: movingCard, dynamicSize: dynamicSize)
+                            .environmentObject(gameManager)
+                    }
+                    
+                    // MARK: - Slowpoke & AutoPilot
+                    VStack {
+                        Spacer()
+                        HStack(alignment: .bottom, spacing: 16) {
+                            #if DEBUG
+                            InsetTableButton(
+                                systemName: "hare.fill",
+                                imageName: nil,
+                                size: dynamicSize.dealerButtonSize,
+                                isOn: gameManager.debugAutoPlayAllSteps,
+                                accent: { .orange },
+                                isEnabled: true
+                            ) {
+                                withAnimation(.easeInOut(duration: 0.1)) {
+                                    gameManager.setDebugAutoPlayAllStepsEnabled(!gameManager.debugAutoPlayAllSteps)
+                                }
+                            }
+                            #endif
+
+                            if [.playingTricks, .grabTrick].contains(gameManager.gameState.currentPhase) {
                                 InsetTableButton(
-                                    systemName: nil,
-                                    imageName: "horn",
+                                    systemName: "bolt.fill",
+                                    imageName: nil,
                                     size: dynamicSize.dealerButtonSize,
-                                    isOn: true,
-                                    accent: { .yellow },
+                                    isOn: gameManager.autoPilot,
+                                    accent: { .green },
                                     isEnabled: true
-                                ) {
-                                    gameManager.sendHonk()
-                                    isHonkOnCooldown = true
-                                    // Reset after a short delay to prevent spamming
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                        isHonkOnCooldown = false
+                                )
+                                {
+                                    withAnimation(.easeInOut(duration: 0.1)) {
+                                        gameManager.autoPilot.toggle()
+                                        if gameManager.autoPilot {
+                                            if let localPlayer = gameManager.gameState.localPlayer {
+                                                if localPlayer.announcedTricks.count > localPlayer.madeTricks.count {
+                                                    gameManager.autoPilotShouldWinTricks = true
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             } else {
-                                InsetTableButton(
-                                    systemName: nil,
-                                    imageName: "horn",
-                                    size: dynamicSize.dealerButtonSize,
-                                    isOn: false,
-                                    accent: { .yellow },
-                                    isEnabled: false
-                                ) {
+                                Circle()
+                                    .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
+                                    .opacity(0)
+                            }
+                            
+                            if gameManager.isSlowPoke.values.contains(true) {
+                                if !isHonkOnCooldown {
+                                    InsetTableButton(
+                                        systemName: nil,
+                                        imageName: "horn",
+                                        size: dynamicSize.dealerButtonSize,
+                                        isOn: true,
+                                        accent: { .yellow },
+                                        isEnabled: true
+                                    ) {
+                                        gameManager.sendHonk()
+                                        isHonkOnCooldown = true
+                                        // Reset after a short delay to prevent spamming
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                            isHonkOnCooldown = false
+                                        }
+                                    }
+                                } else {
+                                    InsetTableButton(
+                                        systemName: nil,
+                                        imageName: "horn",
+                                        size: dynamicSize.dealerButtonSize,
+                                        isOn: false,
+                                        accent: { .yellow },
+                                        isEnabled: false
+                                    ) {
+                                    }
                                 }
                             }
+                            
+                            Spacer()
                         }
-                        
-                        
-                        Spacer()
+                        .padding(.leading, 16)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.leading, 16)
-                    .padding(.bottom, 16)
-                }
-                .zIndex(20_000)
-
-                // End-of-game lobby panel on top of all game layers.
-                if gameManager.gameState.currentPhase == .waitingToStart && !gameManager.isFirstGame {
-                    ZStack {
-                        Color.clear
-                        TableView(
-                            gameState: gameManager.gameState,
-                            dynamicSize: dynamicSize,
-                            showRoundHistory: $showRoundHistory,
-                            showWaitingPanelInPlace: true
-                        )
-                        .frame(width: dynamicSize.tableWidth, height: dynamicSize.tableHeight)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .zIndex(10_000)
+                    .zIndex(20_000)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -515,6 +520,9 @@ struct GameView: View {
                         gameManager.checkDeckMeasurementReadiness(reason: "entered renderingDeck from GameView")
                     }
                 }
+            }
+            .onReceive(gameManager.gameState.objectWillChange) { _ in
+                gameStateRefreshTick &+= 1
             }
             // End GeometryReader
             if gameManager.isRestoring {

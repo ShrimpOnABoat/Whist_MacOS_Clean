@@ -19,6 +19,11 @@ struct PlayerView: View {
     @State private var selectedCardIDs: Set<String> = []
     @State private var scoreChange: Int? = nil
     @State private var isBlinking = false
+
+    private var shouldShowTrickDisplay: Bool {
+        gameManager.gameState.currentPhase != .waitingToStart &&
+        (gameManager.allPlayersBet() || gameManager.gameState.round < 4)
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -77,10 +82,12 @@ struct PlayerView: View {
             ZStack {
                 VStack {
                     StateDisplay()
-                    TrickDisplay(dynamicSize: dynamicSize)
-                        .onTapGesture {
-                            gameManager.showLastTrick.toggle()
-                        }
+                    if shouldShowTrickDisplay {
+                        TrickDisplay(dynamicSize: dynamicSize)
+                            .onTapGesture {
+                                gameManager.showLastTrick.toggle()
+                            }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 PlayerInfo(dynamicSize: dynamicSize)
@@ -150,7 +157,7 @@ struct PlayerView: View {
                                 }
                             }
                             .frame(maxHeight: .infinity, alignment: .top)
-                            if gameManager.allPlayersBet() || gameManager.gameState.round < 4 {
+                            if shouldShowTrickDisplay {
                                 Button(action: {
                                     gameManager.showLastTrick.toggle()
                                 }) {
@@ -191,7 +198,7 @@ struct PlayerView: View {
                                 }
                             }
                             .frame(maxHeight: .infinity, alignment: .top)
-                            if gameManager.allPlayersBet() || gameManager.gameState.round < 4 {
+                            if shouldShowTrickDisplay {
                                 TrickDisplay(dynamicSize: dynamicSize)
                                     .onTapGesture {
                                         gameManager.showLastTrick.toggle()
@@ -346,23 +353,9 @@ struct PlayerView: View {
                         .font(.system(size: dynamicSize.stateTextSize, weight: .semibold))
                         .padding(.vertical, 7)
                         .padding(.horizontal, 13)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(selectedCount == numberOfCardsToDiscard ? GameVisualStyle.primaryAccent : GameVisualStyle.glassFill)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(.ultraThinMaterial)
-                                )
-                        )
-                        .foregroundColor(selectedCount == numberOfCardsToDiscard ? Color.white : Color.black)
-                        .clipShape(Capsule(style: .continuous))
-                        .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 5)
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .strokeBorder(selectedCount == numberOfCardsToDiscard ? Color.white.opacity(0.7) : GameVisualStyle.glassStroke, lineWidth: 1.2)
-                        )
+                        .gameActionCapsule(isEnabled: selectedCount == numberOfCardsToDiscard)
                 }
-                .buttonStyle(HoverMoveUpButtonStyle(isActive: selectedCount == numberOfCardsToDiscard))
+                .buttonStyle(GameHoverLiftButtonStyle(isActive: selectedCount == numberOfCardsToDiscard))
                 .disabled(selectedCount != numberOfCardsToDiscard)
                 .animation(.easeInOut, value: selectedCount)
             }
@@ -416,22 +409,31 @@ struct PlayerView: View {
                 if !stateMessage.isEmpty {
                     Text(stateMessage)
                         .font(.system(size: dynamicSize.stateTextSize, weight: .medium))
-                        .foregroundColor(.black.opacity(0.78))
+                        .foregroundColor(Color.white.opacity(0.96))
                         .padding(.vertical, 7)
                         .padding(.horizontal, 12)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(GameVisualStyle.glassFill)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.black.opacity(0.34),
+                                            Color.black.opacity(0.22)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                                 .background(
                                     Capsule(style: .continuous)
-                                        .fill(.ultraThinMaterial)
+                                        .fill(.ultraThinMaterial.opacity(0.55))
                                 )
                         )
                         .clipShape(Capsule(style: .continuous))
-                        .shadow(color: Color.black.opacity(0.18), radius: 9, x: 0, y: 5)
+                        .shadow(color: Color.black.opacity(0.22), radius: 9, x: 0, y: 5)
                         .overlay(
                             Capsule(style: .continuous)
-                                .strokeBorder(GameVisualStyle.glassStroke, lineWidth: 1.1)
+                                .strokeBorder(Color.white.opacity(0.58), lineWidth: 1.1)
                         )
                         .transition(.opacity.combined(with: .scale))
                         .animation(.easeInOut(duration: 0.3), value: player.state)

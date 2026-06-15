@@ -104,6 +104,7 @@ class GameManager: ObservableObject {
     var currentGameSessionId: String?
     @Published var latestGameInsightFacts: [GameInsightFact] = []
     @Published var latestGameAllInsightFacts: [GameInsightFact] = []
+    @Published var showPostGameResultScreen: Bool = false
     var trumpSelectionsBySuit: [Suit: Int] = [:]
     var trumpSelectionsByPlayer: [PlayerId: [Suit: Int]] = [:]
     var trumpCancelCount: Int = 0
@@ -240,6 +241,7 @@ class GameManager: ObservableObject {
     
     func newGame() {
         resetInsightsTrackingForNewGame()
+        showPostGameResultScreen = false
         hasStartedFinalScoreSave = false
         lastGameWinner = nil
         gameState.round = 0
@@ -1113,6 +1115,7 @@ class GameManager: ObservableObject {
         self.showImpactEffect = false
         self.showSubtleFailureEffect = false
         self.effectPosition = .zero
+        self.showPostGameResultScreen = false
         self.hasDeferredStartNewGame = false
         self.deferredStartNewGameSequence = nil
         self.deferredStartNewGamePayload = nil

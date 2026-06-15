@@ -10,6 +10,10 @@ import SwiftUI
 struct ScoreBoardView: View {
     @EnvironmentObject var gameManager: GameManager
     var dynamicSize: DynamicSize
+    
+    private let panelTextColor = Color.white.opacity(0.96)
+    private let secondaryTextColor = Color.white.opacity(0.82)
+    private let tertiaryTextColor = Color.white.opacity(0.72)
 
         
     var body: some View {
@@ -33,7 +37,8 @@ struct ScoreBoardView: View {
             Text("Tour \(roundString)")
                 .font(.system(size: dynamicSize.roundSize))
                 .fontWeight(.semibold)
-                .foregroundColor(.black.opacity(0.82))
+                .foregroundColor(panelTextColor)
+                .shadow(color: .black.opacity(0.28), radius: 3, x: 0, y: 1)
 
             // Header row: Player IDs
             HStack {
@@ -47,7 +52,7 @@ struct ScoreBoardView: View {
                         Text(id.displayName)
                             .font(.system(size: dynamicSize.nameSize))
                             .fontWeight(.semibold)
-                            .foregroundColor(.black.opacity(0.78))
+                            .foregroundColor(secondaryTextColor)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -76,18 +81,18 @@ struct ScoreBoardView: View {
                         HStack {
                             Text("\(tricks)")
                                 .font(.system(size: dynamicSize.scoreSize))
-                                .foregroundColor(.black.opacity(0.68))
+                                .foregroundColor(tertiaryTextColor)
                             
                             HStack(spacing: 0) {
                                 Text("\(score)")
                                     .font(.system(size: dynamicSize.scoreSize))
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.black.opacity(0.86))
+                                    .foregroundColor(panelTextColor)
                                 if player.onlyWinsBonus {
                                     Text("+5")
                                         .font(.system(size: dynamicSize.scoreSize * 0.6))
                                         .fontWeight(.bold)
-                                        .foregroundColor(.green)
+                                        .foregroundColor(Color(red: 0.68, green: 0.95, blue: 0.56))
                                         .baselineOffset(dynamicSize.scoreSize * 0.3)
                                 }
                             }
@@ -109,7 +114,7 @@ struct ScoreBoardView: View {
                             Text("\(announcedTricks)")
                                 .font(.system(size: dynamicSize.announceSize))
                                 .bold(true)
-                                .foregroundColor(.primary)
+                                .foregroundColor(panelTextColor)
                         } else if gameManager.gameState.currentPhase.isBeforePlayingPhase {
                             let roundModifiers = determineRoundModifiers()
                             let mod = roundModifiers[id] ?? 0
@@ -136,23 +141,45 @@ struct ScoreBoardView: View {
         }
         .padding(.vertical, dynamicSize.proportion * 14)
         .padding(.horizontal, dynamicSize.proportion * 18)
-        .gameGlassPanel(cornerRadius: 16, strokeColor: scoreboardBorderColor(for: gameManager), fillOpacity: 0.94)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.34),
+                            Color.black.opacity(0.22)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial.opacity(0.55))
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(scoreboardBorderColor(for: gameManager), lineWidth: 1.2)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 16, x: 0, y: 8)
+        .shadow(color: Color.white.opacity(0.08), radius: 1, x: 0, y: 1)
     }
     
     private func scoreboardBorderColor(for gameManager: GameManager) -> Color {
-        // Default neutral border
         let round = gameManager.gameState.round
         guard round >= 4 && gameManager.allPlayersBet() else {
-            return GameVisualStyle.glassStroke
+            return Color.white.opacity(0.58)
         }
         
-        let diff = betsDiff(for: gameManager)
-        if diff == 0 {
-            return GameVisualStyle.glassStroke
+        let diff = totalBetsThisRound(for: gameManager) - targetCardsThisRound(for: gameManager)
+        if diff < 0 {
+            return Color(red: 0.05, green: 0.48, blue: 0.86).opacity(0.92)
         }
-        
-        // Slightly stronger border for readability
-        return (diff < 0 ? Color.blue : Color.red).opacity(0.85)
+        if diff > 0 {
+            return Color(red: 0.88, green: 0.16, blue: 0.18).opacity(0.92)
+        }
+        return Color.white.opacity(0.72)
     }
     
     private func totalBetsThisRound(for gameManager: GameManager) -> Int {
@@ -166,10 +193,6 @@ struct ScoreBoardView: View {
         let round = gameManager.gameState.round
         // In rounds 4+, target cards per player is (round - 2). Clamp at 1 for safety.
         return max(round - 2, 1)
-    }
-
-    private func betsDiff(for gameManager: GameManager) -> Int {
-        totalBetsThisRound(for: gameManager) - targetCardsThisRound(for: gameManager)
     }
 
     func determineRoundModifiers() -> [PlayerId: Int] {

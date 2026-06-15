@@ -13,7 +13,6 @@ struct TableView: View {
     @Binding var showRoundHistory: Bool
     let showWaitingPanelInPlace: Bool
     var dynamicSize: DynamicSize
-    @State private var showAllInsights: Bool = false
     
     enum Mode {
         case tricks, trumps
@@ -35,7 +34,7 @@ struct TableView: View {
                 if gameManager.gameState.currentPhase == .waitingToStart {
                     if !showWaitingPanelInPlace {
                         EmptyView()
-                    } else if gameManager.isFirstGame {
+                    } else {
                         VStack {
                             Button(action: {
                                 gameManager.startNewGameAction()
@@ -44,148 +43,10 @@ struct TableView: View {
                                     .font(.system(size: 18, weight: .semibold))
                                     .padding(.vertical, 9)
                                     .padding(.horizontal, 16)
-                                    .background(GameVisualStyle.primaryAccent)
-                                    .foregroundColor(.white)
-                                    .clipShape(Capsule(style: .continuous))
-                                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
-                                    .overlay(
-                                        Capsule(style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.7), lineWidth: 1.2)
-                                    )
+                                    .gameActionCapsule()
                             }
+                            .buttonStyle(GameHoverLiftButtonStyle(isActive: true))
                             .buttonStyle(PlainButtonStyle())
-                        }
-                    } else {
-                        VStack(spacing: 14) {
-                            if let winner = gameManager.lastGameWinner {
-                                Text("🎉🎊 BRAVO \(winner.rawValue.uppercased()) 🎊🎉")
-                                    .font(.system(size: 30, weight: .bold))
-                                    .foregroundColor(.yellow)
-                                    .shadow(radius: 5)
-                                    .multilineTextAlignment(.center)
-                            } else {
-                                Text("🃏 Nouvelle partie")
-                                    .font(.system(size: 30, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .shadow(radius: 5)
-                                    .multilineTextAlignment(.center)
-                            }
-
-                            Text(dynamicHeaderSentence())
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 8)
-
-                            let topFacts = Array(gameManager.latestGameInsightFacts.prefix(3))
-                            if !topFacts.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Faits marquants")
-                                        .font(.system(size: 17, weight: .bold))
-                                        .foregroundColor(.white)
-                                    ForEach(Array(topFacts.enumerated()), id: \.element.id) { index, fact in
-                                        Text("\(index + 1). \(fact.text)")
-                                            .font(.system(size: 15))
-                                            .foregroundColor(.white.opacity(0.96))
-                                            .multilineTextAlignment(.leading)
-                                    }
-                                }
-                                .frame(maxWidth: 540, alignment: .leading)
-                            }
-
-                            HStack(spacing: 12) {
-                                Button(action: {
-                                    showRoundHistory = true
-                                }) {
-                                    Text("Détails")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 14)
-                                        .background(GameVisualStyle.glassFill)
-                                        .foregroundColor(.white)
-                                        .clipShape(Capsule(style: .continuous))
-                                        .overlay(
-                                            Capsule(style: .continuous)
-                                                .strokeBorder(Color.white.opacity(0.7), lineWidth: 1.2)
-                                        )
-                                }
-                                .buttonStyle(PlainButtonStyle())
-
-                                Button(action: {
-                                    gameManager.startNewGameAction()
-                                }) {
-                                    Text(gameManager.hasDeferredStartNewGame ? "Rejoindre la partie" : "Nouvelle partie")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 14)
-                                        .background(GameVisualStyle.primaryAccent)
-                                        .foregroundColor(.white)
-                                        .clipShape(Capsule(style: .continuous))
-                                        .overlay(
-                                            Capsule(style: .continuous)
-                                                .strokeBorder(Color.white.opacity(0.75), lineWidth: 1.2)
-                                        )
-                                }
-                                .buttonStyle(PlainButtonStyle())
-
-                                Button(action: {
-                                    showAllInsights = true
-                                }) {
-                                    Text("Tous les insights")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 14)
-                                        .background(GameVisualStyle.glassFill)
-                                        .foregroundColor(.white)
-                                        .clipShape(Capsule(style: .continuous))
-                                        .overlay(
-                                            Capsule(style: .continuous)
-                                                .strokeBorder(Color.white.opacity(0.7), lineWidth: 1.2)
-                                        )
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                        .frame(maxWidth: 660)
-                        .padding(.vertical, 20)
-                        .padding(.horizontal, 22)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color.black.opacity(0.24))
-                                .background(
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .fill(.ultraThinMaterial)
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.36), lineWidth: 1.1)
-                        )
-                        .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
-                        .transition(.scale)
-                        .sheet(isPresented: $showAllInsights) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Tous les insights")
-                                    .font(.title2.bold())
-                                    .foregroundColor(.white)
-                                if gameManager.latestGameAllInsightFacts.isEmpty {
-                                    Text("Aucun insight disponible pour cette partie.")
-                                        .foregroundColor(.white.opacity(0.9))
-                                } else {
-                                    ScrollView {
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            ForEach(Array(gameManager.latestGameAllInsightFacts.enumerated()), id: \.element.id) { index, fact in
-                                                Text("\(index + 1). \(fact.text)")
-                                                    .foregroundColor(.white.opacity(0.95))
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(20)
-                            .frame(minWidth: 600, minHeight: 500)
-                            .background(Color.black.opacity(0.85))
                         }
                     }
                 } else {
@@ -256,15 +117,5 @@ struct TableView: View {
             }
         }
         .frame(alignment: .center)
-    }
-
-    private func dynamicHeaderSentence() -> String {
-        if let firstFact = gameManager.latestGameInsightFacts.first {
-            return firstFact.text
-        }
-        if let winner = gameManager.lastGameWinner {
-            return "\(winner.rawValue.uppercased()) a dominé cette partie avec brio."
-        }
-        return "Prenez le temps de revoir la partie, puis rejoignez quand vous êtes prêt."
     }
 }

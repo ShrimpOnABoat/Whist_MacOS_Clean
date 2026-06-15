@@ -19,6 +19,16 @@
 		9532E17D2DBAFDB70001A523 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 9532E17C2DBAFDB70001A523 /* FirebaseFirestore */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		95E9A44B2D0DDC1800505A6B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 95A0C6A22CEB85EB00EA513A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 95A0C6A92CEB85EB00EA513A;
+			remoteInfo = Whist;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		9502AE9B2DB3EA2E00990C9E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		953011AE2DBAF98600662D7D /* absl.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = absl.framework; sourceTree = "<group>"; };
@@ -124,16 +134,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXContainerItemProxy section */
-		95E9A44B2D0DDC1800505A6B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 95A0C6A22CEB85EB00EA513A /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 95A0C6A92CEB85EB00EA513A;
-			remoteInfo = Whist;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		95A0C6A92CEB85EB00EA513A /* Whist */ = {

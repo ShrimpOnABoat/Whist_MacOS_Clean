@@ -545,10 +545,9 @@ extension GameManager {
 
         case .gameOver:
             setPlayerState(to: .idle)
-            showConfetti.toggle()
             playSound(named: "applaud")
-            playSound(named: "confetti")
             isFirstGame = false
+            showPostGameResultScreen = true
             guard !isFinalizingGameOver else {
                 logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
                 return
