@@ -9,6 +9,53 @@ import SwiftUI
 import AppKit
 import simd
 
+private struct FeltTextureTuning {
+    // Weights for broad mottle components in the felt texture
+    static let broadMottleAWeight = 0.52
+    static let broadMottleBWeight = 0.48
+
+    // Weights for blending mottling layers
+    static let broadBlendWeight = 0.34
+    static let midMottleWeight = 0.26
+    static let fineMottleWeight = 0.40
+
+    // Factors to modulate the mottle and fiber noise contributions
+    static let mottleFactorWeight = 0.060
+    static let midFactorWeight = 0.042
+    static let fineFactorWeight = 0.064
+
+    // Weights for fiber noise components
+    static let fiberAWeight = 0.036
+    static let fiberBWeight = 0.030
+    static let fiberCWeight = 0.026
+
+    // Weights for grain noise components
+    static let grainWeight = 0.052
+    static let fineGrainWeight = 0.030
+    static let microNapWeight = 0.045
+    
+    // Base value offset for final color calculation
+    static let valueBase = 1.0
+    
+    // Warm shift base and scale for color adjustment
+    static let warmShiftBase = 0.012
+    static let warmShiftScale = 0.010
+    
+    // Cool shadow scale for color adjustment
+    static let coolShadowScale = 0.018
+}
+
+private struct FeltLightingTuning {
+    static let centerGlowInnerOpacity = 0.13
+    static let centerGlowMidOpacity = 0.050
+    static let centerGlowOuterOpacity = 0.0
+    static let vignetteStartLocation = 0.42
+    static let vignetteMidLocation = 0.70
+    static let vignetteMidOpacity = 0.50
+    static let vignetteOuterOpacity = 1.34
+    static let secondaryEdgeOpacity = 0.46
+}
+
 // MARK: - Advanced Felt View
 
 //struct AdvancedFeltView: View {
@@ -75,16 +122,16 @@ struct FeltBackgroundView: View {
                     .overlay(
                         Image("noiseTexture-4-alpha")
                             .resizable(resizingMode: .tile)
-                            .opacity(0.18)
+                            .opacity(0.22)
                             .blendMode(.multiply)
                     )
                     .overlay(
-                        Color.black.opacity(0.10)
+                        Color.black.opacity(0.13)
                             .blendMode(.multiply)
                     )
                     .overlay(
-                        Color(red: 0.78, green: 0.35, blue: 0.20)
-                            .opacity(0.06)
+                        Color(red: 0.70, green: 0.20, blue: 0.18)
+                            .opacity(0.04)
                             .blendMode(.softLight)
                     )
 
@@ -177,38 +224,40 @@ struct FeltBackgroundView: View {
                 
                 // 5. Center glow and edge vignette for table depth
                 RadialGradient(
-                    gradient: Gradient(colors: [
-                        Color.white.opacity(0.20),
-                        Color.white.opacity(0.06),
-                        Color.clear
+                    gradient: Gradient(stops: [
+                        .init(color: Color.white.opacity(FeltLightingTuning.centerGlowInnerOpacity), location: 0.0),
+                        .init(color: Color.white.opacity(FeltLightingTuning.centerGlowMidOpacity), location: 0.42),
+                        .init(color: Color.white.opacity(FeltLightingTuning.centerGlowOuterOpacity), location: 0.76),
+                        .init(color: Color.clear, location: 1.0)
                     ]),
-                    center: .init(x: 0.52, y: 0.48),
+                    center: .init(x: 0.50, y: 0.50),
                     startRadius: 10,
-                    endRadius: min(geometry.size.width, geometry.size.height) / 1.15
+                    endRadius: min(geometry.size.width, geometry.size.height) / 1.85
                 )
+                .scaleEffect(x: 1.45, y: 0.82)
                 .blendMode(.softLight)
 
                 RadialGradient(
                     gradient: Gradient(stops: [
                         .init(color: Color.clear, location: 0.0),
-                        .init(color: Color.clear, location: 0.46),
-                        .init(color: Color.black.opacity(radialShadingStrength * 0.26), location: 0.72),
-                        .init(color: Color.black.opacity(radialShadingStrength * 0.72), location: 1.0)
+                        .init(color: Color.clear, location: FeltLightingTuning.vignetteStartLocation),
+                        .init(color: Color.black.opacity(radialShadingStrength * FeltLightingTuning.vignetteMidOpacity), location: FeltLightingTuning.vignetteMidLocation),
+                        .init(color: Color.black.opacity(radialShadingStrength * FeltLightingTuning.vignetteOuterOpacity), location: 1.0)
                     ]),
                     center: .init(x: 0.52, y: 0.50),
                     startRadius: 0,
-                    endRadius: max(geometry.size.width, geometry.size.height) * 0.72
+                    endRadius: max(geometry.size.width, geometry.size.height) * 0.63
                 )
                 .blendMode(.multiply)
                 
                 RadialGradient(
                     gradient: Gradient(colors: [
                         .clear,
-                        .black.opacity(radialShadingStrength * 0.20)
+                        .black.opacity(radialShadingStrength * FeltLightingTuning.secondaryEdgeOpacity)
                     ]),
                     center: .init(x: 0.55, y: 0.48),
-                    startRadius: min(geometry.size.width, geometry.size.height) * 0.25,
-                    endRadius: min(geometry.size.width, geometry.size.height) / 1.55
+                    startRadius: min(geometry.size.width, geometry.size.height) * 0.24,
+                    endRadius: min(geometry.size.width, geometry.size.height) / 1.28
                 )
                 .blendMode(.multiply)
             }
@@ -249,7 +298,7 @@ private enum FeltTextureCache {
         let scale = min(1, maxDimension / max(size.width, size.height, 1))
         let pixelWidth = max(8, Int((size.width * scale).rounded()))
         let pixelHeight = max(8, Int((size.height * scale).rounded()))
-        let key = "natural-v2-\(baseColorIndex)-\(pixelWidth)x\(pixelHeight)" as NSString
+        let key = "natural-v5-\(baseColorIndex)-\(pixelWidth)x\(pixelHeight)" as NSString
 
         if let cached = cache.object(forKey: key) {
             return cached
@@ -295,26 +344,32 @@ private enum FeltTextureCache {
                 let warpX = fbm(nx * 1.45 + 12.7, ny * 1.45 + 4.1, octaves: 4, seed: 17) * 0.22
                 let warpY = fbm(nx * 1.35 + 1.3, ny * 1.35 + 9.8, octaves: 4, seed: 29) * 0.22
 
-                let broadMottle = rotatedFBM(nx + warpX, ny + warpY, scaleX: 2.4, scaleY: 2.1, angle: 0.31, octaves: 6, seed: 3)
-                let broadMottleB = rotatedFBM(nx - warpY * 0.8, ny + warpX * 0.8, scaleX: 3.3, scaleY: 2.7, angle: -0.48, octaves: 5, seed: 23)
-                let midMottle = rotatedFBM(nx + warpY * 0.7, ny + warpX * 0.7, scaleX: 8.8, scaleY: 7.4, angle: 0.17, octaves: 4, seed: 37)
-                let fineMottle = fbm(nx * 28.0 + warpY, ny * 28.0 + warpX, octaves: 4, seed: 41)
-                let fiberA = rotatedNoise(nx + warpX * 0.18, ny + warpY * 0.18, scaleX: 34, scaleY: 118, angle: 0.22, seed: 71)
-                let fiberB = rotatedNoise(nx - warpY * 0.14, ny + warpX * 0.14, scaleX: 96, scaleY: 42, angle: -0.34, seed: 83)
+                let broadMottle = rotatedFBM(nx + warpX, ny + warpY, scaleX: 2.0, scaleY: 1.8, angle: 0.31, octaves: 5, seed: 3)
+                let broadMottleB = rotatedFBM(nx - warpY * 0.8, ny + warpX * 0.8, scaleX: 2.8, scaleY: 2.4, angle: -0.48, octaves: 4, seed: 23)
+                let midMottle = rotatedFBM(nx + warpY * 0.7, ny + warpX * 0.7, scaleX: 11.0, scaleY: 9.5, angle: 0.17, octaves: 4, seed: 37)
+                let fineMottle = fbm(nx * 48.0 + warpY, ny * 48.0 + warpX, octaves: 3, seed: 41)
+                let fiberA = rotatedNoise(nx + warpX * 0.10, ny + warpY * 0.10, scaleX: 34, scaleY: 270, angle: 0.18, seed: 71)
+                let fiberB = rotatedNoise(nx - warpY * 0.10, ny + warpX * 0.10, scaleX: 58, scaleY: 210, angle: -0.28, seed: 83)
+                let fiberC = rotatedNoise(nx + warpY * 0.08, ny - warpX * 0.08, scaleX: 120, scaleY: 360, angle: 1.48, seed: 97)
+                let microNap = fbm(nx * 165.0 + warpX * 0.5, ny * 165.0 + warpY * 0.5, octaves: 3, seed: 59)
                 let grain = hash(x, y, seed: 101)
                 let fineGrain = hash(x * 3 + y, y * 5 - x, seed: 131)
 
-                let broadBlend = broadMottle * 0.62 + broadMottleB * 0.38
-                let mottle = broadBlend * 0.58 + midMottle * 0.30 + fineMottle * 0.12
-                let mottleFactor = (broadBlend - 0.5) * 0.125
-                let midFactor = (midMottle - 0.5) * 0.082
-                let fineFactor = (fineMottle - 0.5) * 0.045
-                let fiberFactor = ((fiberA - 0.5) * 0.026) + ((fiberB - 0.5) * 0.020)
-                let grainFactor = (grain - 0.5) * 0.052 + (fineGrain - 0.5) * 0.026
-                let value = 1.0 + mottleFactor + midFactor + fineFactor + fiberFactor + grainFactor
+                let broadBlend = broadMottle * FeltTextureTuning.broadMottleAWeight + broadMottleB * FeltTextureTuning.broadMottleBWeight
+                let mottle = broadBlend * FeltTextureTuning.broadBlendWeight + midMottle * FeltTextureTuning.midMottleWeight + fineMottle * FeltTextureTuning.fineMottleWeight
+                let mottleFactor = (broadBlend - 0.5) * FeltTextureTuning.mottleFactorWeight
+                let midFactor = (midMottle - 0.5) * FeltTextureTuning.midFactorWeight
+                let fineFactor = (fineMottle - 0.5) * FeltTextureTuning.fineFactorWeight
+                let fiberFactor =
+                    ((fiberA - 0.5) * FeltTextureTuning.fiberAWeight) +
+                    ((fiberB - 0.5) * FeltTextureTuning.fiberBWeight) +
+                    ((fiberC - 0.5) * FeltTextureTuning.fiberCWeight)
+                let grainFactor = (grain - 0.5) * FeltTextureTuning.grainWeight + (fineGrain - 0.5) * FeltTextureTuning.fineGrainWeight
+                let microNapFactor = (microNap - 0.5) * FeltTextureTuning.microNapWeight
+                let value = FeltTextureTuning.valueBase + mottleFactor + midFactor + fineFactor + fiberFactor + grainFactor + microNapFactor
 
-                let warmShift = 0.018 + (mottle - 0.5) * 0.018
-                let coolShadow = max(0, 0.5 - mottle) * 0.025
+                let warmShift = FeltTextureTuning.warmShiftBase + (mottle - 0.5) * FeltTextureTuning.warmShiftScale
+                let coolShadow = max(0, 0.5 - mottle) * FeltTextureTuning.coolShadowScale
 
                 let offset = (y * width + x) * 4
                 data[offset] = UInt8(clamp((red * value + warmShift) * 255, min: 0, max: 255))
