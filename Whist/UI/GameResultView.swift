@@ -75,25 +75,25 @@ struct GameResultView: View {
     private var fallbackInsightTexts: [String] {
         let winnerSummary: String = {
             guard let winner else {
-                return "La partie est terminee et le resultat final est pret."
+                return "La partie est terminée, le verdict est tombé."
             }
-            return "\(winner.username.uppercased()) termine en tete avec \(winner.scores.last ?? 0) points."
+            return "\(winner.username.uppercased()) prend la partie avec \(winner.scores.last ?? 0) points."
         }()
 
         let rankingSummary: String = {
             let ranking = rankedPlayers.map { $0.username.uppercased() }.joined(separator: " • ")
             if ranking.isEmpty {
-                return "Le classement final est disponible dans les details."
+                return "Le classement final garde encore son suspense."
             }
-            return "Classement final : \(ranking)."
+            return "Podium du jour : \(ranking)."
         }()
 
         let roundSummary: String = {
             let visibleRound = max(gameState.round - 2, gameState.round)
             if visibleRound > 0 {
-                return "La partie s'est jouee sur \(visibleRound) tours."
+                return "\(visibleRound) tours joués, assez pour faire parler les cartes."
             }
-            return "Rejoignez la table quand vous etes pret pour la prochaine partie."
+            return "La table est prête pour une revanche."
         }()
 
         return [winnerSummary, rankingSummary, roundSummary]

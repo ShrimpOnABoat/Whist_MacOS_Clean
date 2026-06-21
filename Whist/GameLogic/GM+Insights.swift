@@ -274,7 +274,7 @@ extension GameManager {
                 category: "score",
                 value: Double(top.1),
                 direction: .high,
-                text: "\(displayName(for: top.0)) a terminé avec \(top.1) points."
+                text: "\(displayName(for: top.0)) mène la danse avec \(top.1) points."
             ))
         }
         if let bottom = sortedFinal.last {
@@ -283,7 +283,7 @@ extension GameManager {
                 category: "score",
                 value: Double(bottom.1),
                 direction: .low,
-                text: "\(displayName(for: bottom.0)) a terminé avec seulement \(bottom.1) points."
+                text: "\(displayName(for: bottom.0)) finit dans le dur avec \(bottom.1) points."
             ))
         }
         if sortedFinal.count >= 2 {
@@ -293,14 +293,14 @@ extension GameManager {
                 category: "score",
                 value: Double(gap),
                 direction: .high,
-                text: "\(displayName(for: sortedFinal[0].0)) a gagné avec \(gap) points d'avance sur le 2e."
+                text: "\(displayName(for: sortedFinal[0].0)) s'offre la partie avec \(gap) points d'avance."
             ))
             samples.append(InsightSample(
                 key: "final_gap_close",
                 category: "score",
                 value: Double(gap),
                 direction: .low,
-                text: "\(displayName(for: sortedFinal[0].0)) a gagné avec seulement \(gap) point(s) d'écart."
+                text: "\(displayName(for: sortedFinal[0].0)) arrache la victoire pour \(gap) point(s)."
             ))
         }
 
@@ -345,14 +345,14 @@ extension GameManager {
                 category: "momentum",
                 value: Double(leadChanges),
                 direction: .high,
-                text: "Le joueur en première position a changé \(leadChanges) fois."
+                text: "La tête de course a changé \(leadChanges) fois."
             ))
             samples.append(InsightSample(
                 key: "all_tied_rounds",
                 category: "momentum",
                 value: Double(allTiedRounds),
                 direction: .high,
-                text: "Égalité parfaite sur \(allTiedRounds) tour(s)."
+                text: "Suspense total: égalité parfaite sur \(allTiedRounds) tour(s)."
             ))
 
             if let firstLeader = roundsInFirst.max(by: { $0.value < $1.value }) {
@@ -361,7 +361,7 @@ extension GameManager {
                     category: "momentum",
                     value: Double(firstLeader.value),
                     direction: .high,
-                    text: "\(displayName(for: firstLeader.key)) a mené \(firstLeader.value) tours."
+                    text: "\(displayName(for: firstLeader.key)) a dicté le rythme pendant \(firstLeader.value) tours."
                 ))
             }
             if let lastLeader = roundsInLast.max(by: { $0.value < $1.value }) {
@@ -370,7 +370,7 @@ extension GameManager {
                     category: "momentum",
                     value: Double(lastLeader.value),
                     direction: .high,
-                    text: "\(displayName(for: lastLeader.key)) est resté dernier \(lastLeader.value) tours."
+                    text: "\(displayName(for: lastLeader.key)) a vu le classement d'en bas pendant \(lastLeader.value) tours."
                 ))
             }
 
@@ -389,14 +389,14 @@ extension GameManager {
                 category: "momentum",
                 value: Double(bestComeback.value),
                 direction: .high,
-                text: "Remontée folle: \(displayName(for: bestComeback.player)) a gagné \(bestComeback.value) place(s)."
+                text: "Remontée express: \(displayName(for: bestComeback.player)) grimpe de \(bestComeback.value) place(s)."
             ))
             samples.append(InsightSample(
                 key: "collapse_rank",
                 category: "momentum",
                 value: Double(worstCollapse.value),
                 direction: .high,
-                text: "Chute marquée: \(displayName(for: worstCollapse.player)) a perdu \(worstCollapse.value) place(s)."
+                text: "Décrochage brutal: \(displayName(for: worstCollapse.player)) lâche \(worstCollapse.value) place(s)."
             ))
         }
 
@@ -534,7 +534,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(exactBest.streak),
                 direction: .high,
-                text: "\(displayName(for: exactBest.player)) a enchaîné \(exactBest.streak) mises exactes."
+                text: "\(displayName(for: exactBest.player)) aligne \(exactBest.streak) annonces parfaites."
             ))
         }
         if missedBest.streak > 0 {
@@ -543,7 +543,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(missedBest.streak),
                 direction: .high,
-                text: "\(displayName(for: missedBest.player)) a enchaîné \(missedBest.streak) mises ratées."
+                text: "\(displayName(for: missedBest.player)) traverse \(missedBest.streak) annonces à côté."
             ))
         }
         if overbidBest.count > 0 {
@@ -552,7 +552,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(overbidBest.count),
                 direction: .high,
-                text: "\(displayName(for: overbidBest.player)) a surmisé \(overbidBest.count) fois."
+                text: "\(displayName(for: overbidBest.player)) a vu trop grand \(overbidBest.count) fois."
             ))
         }
         if underbidBest.count > 0 {
@@ -561,7 +561,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(underbidBest.count),
                 direction: .high,
-                text: "\(displayName(for: underbidBest.player)) a sous-misé \(underbidBest.count) fois."
+                text: "\(displayName(for: underbidBest.player)) a joué trop prudent \(underbidBest.count) fois."
             ))
         }
         if maxBidError.value > 0 {
@@ -570,7 +570,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(maxBidError.value),
                 direction: .high,
-                text: "Erreur de mise max: \(displayName(for: maxBidError.player)) s'est trompé de \(maxBidError.value)."
+                text: "Plus gros raté d'annonce: \(displayName(for: maxBidError.player)) se trompe de \(maxBidError.value)."
             ))
         }
 
@@ -580,7 +580,7 @@ extension GameManager {
                 category: "score",
                 value: Double(latestZeroRound.round),
                 direction: .high,
-                text: "\(displayName(for: latestZeroRound.player)) était encore à 0 au tour \(latestZeroRound.round)."
+                text: "\(displayName(for: latestZeroRound.player)) cherchait encore le déclic au tour \(latestZeroRound.round)."
             ))
         }
         if roundDeltaMax.value > Int.min {
@@ -589,7 +589,7 @@ extension GameManager {
                 category: "score",
                 value: Double(roundDeltaMax.value),
                 direction: .high,
-                text: "Pic de score: \(displayName(for: roundDeltaMax.player)) a fait \(roundDeltaMax.value) points sur un tour."
+                text: "Coup d'éclat: \(displayName(for: roundDeltaMax.player)) claque \(roundDeltaMax.value) points en un tour."
             ))
         }
         if roundDeltaMin.value < Int.max {
@@ -598,7 +598,7 @@ extension GameManager {
                 category: "score",
                 value: Double(roundDeltaMin.value),
                 direction: .low,
-                text: "Tour difficile: \(displayName(for: roundDeltaMin.player)) a fait \(roundDeltaMin.value) points."
+                text: "Tour à oublier: \(displayName(for: roundDeltaMin.player)) encaisse \(roundDeltaMin.value) points."
             ))
         }
         samples.append(InsightSample(
@@ -606,21 +606,21 @@ extension GameManager {
             category: "score",
             value: Double(negativeDeltaBest.value),
             direction: .high,
-            text: "\(displayName(for: negativeDeltaBest.player)) a perdu des points sur \(negativeDeltaBest.value) tours."
+            text: "\(displayName(for: negativeDeltaBest.player)) a reculé au score sur \(negativeDeltaBest.value) tours."
         ))
         samples.append(InsightSample(
             key: "positive_delta_count",
             category: "score",
             value: Double(positiveDeltaBest.value),
             direction: .high,
-            text: "\(displayName(for: positiveDeltaBest.player)) a gagné des points sur \(positiveDeltaBest.value) tours."
+            text: "\(displayName(for: positiveDeltaBest.player)) a fait avancer le compteur sur \(positiveDeltaBest.value) tours."
         ))
         samples.append(InsightSample(
             key: "max_tricks_one_round",
             category: "tricks",
             value: Double(maxTricksOneRound.value),
             direction: .high,
-            text: "\(displayName(for: maxTricksOneRound.player)) a pris \(maxTricksOneRound.value) plis sur un tour."
+            text: "\(displayName(for: maxTricksOneRound.player)) rafle \(maxTricksOneRound.value) plis sur un seul tour."
         ))
         if let highBetLowMade {
             samples.append(InsightSample(
@@ -628,7 +628,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(highBetLowMade.made),
                 direction: .low,
-                text: "\(displayName(for: highBetLowMade.player)) avait annoncé gros mais n'a fait que \(highBetLowMade.made) plis."
+                text: "\(displayName(for: highBetLowMade.player)) annonce lourd, mais ne ramasse que \(highBetLowMade.made) plis."
             ))
         } else {
             samples.append(InsightSample(
@@ -636,7 +636,7 @@ extension GameManager {
                 category: "bidding",
                 value: 0,
                 direction: .low,
-                text: "Aucune grosse annonce (6+) n'a fini en gros échec."
+                text: "Les grosses annonces ont tenu le choc: aucun gros crash à 6+."
             ))
         }
         samples.append(InsightSample(
@@ -644,7 +644,7 @@ extension GameManager {
             category: "bidding",
             value: Double(betsTotalBest.value),
             direction: .high,
-            text: "\(displayName(for: betsTotalBest.player)) a annoncé \(betsTotalBest.value) plis au total."
+            text: "\(displayName(for: betsTotalBest.player)) a mis \(betsTotalBest.value) plis sur la table au total."
         ))
         if let allTricksWinnerHighestRound {
             samples.append(InsightSample(
@@ -652,7 +652,7 @@ extension GameManager {
                 category: "tricks",
                 value: Double(allTricksWinnerHighestRound.round),
                 direction: .high,
-                text: "\(displayName(for: allTricksWinnerHighestRound.player)) a tout pris au tour \(insightRoundLabel(allTricksWinnerHighestRound.round)) et a gagné la partie."
+                text: "\(displayName(for: allTricksWinnerHighestRound.player)) rafle tout au tour \(insightRoundLabel(allTricksWinnerHighestRound.round)) et signe la victoire."
             ))
         } else {
             samples.append(InsightSample(
@@ -660,7 +660,7 @@ extension GameManager {
                 category: "tricks",
                 value: 0,
                 direction: .high,
-                text: "Personne n'a tout pris sur un tour en gagnant la partie."
+                text: "Pas de grand chelem gagnant cette fois."
             ))
         }
         if let allTricksLoserHighestRound {
@@ -669,7 +669,7 @@ extension GameManager {
                 category: "tricks",
                 value: Double(allTricksLoserHighestRound.round),
                 direction: .high,
-                text: "\(displayName(for: allTricksLoserHighestRound.player)) a tout pris au tour \(insightRoundLabel(allTricksLoserHighestRound.round)) mais a perdu la partie."
+                text: "\(displayName(for: allTricksLoserHighestRound.player)) rafle tout au tour \(insightRoundLabel(allTricksLoserHighestRound.round)), mais laisse filer la partie."
             ))
         } else {
             samples.append(InsightSample(
@@ -677,7 +677,7 @@ extension GameManager {
                 category: "tricks",
                 value: 0,
                 direction: .high,
-                text: "Personne n'a tout pris sur un tour en perdant la partie."
+                text: "Aucun grand chelem pour finir perdant."
             ))
         }
 
@@ -699,11 +699,11 @@ extension GameManager {
             let adjustedMaxDeltaRound = max(roundTotalBetDeltaAbsMaxRound - 2, 1)
             let maxDeltaText: String
             if roundTotalBetDeltaSignedAtMax > 0 {
-                maxDeltaText = "Vous avez annoncé \(roundTotalBetDeltaAbsMax) de trop au tour \(adjustedMaxDeltaRound)."
+                maxDeltaText = "Au tour \(adjustedMaxDeltaRound), la table voit trop grand de \(roundTotalBetDeltaAbsMax) plis."
             } else if roundTotalBetDeltaSignedAtMax < 0 {
-                maxDeltaText = "Vous avez annoncé \(roundTotalBetDeltaAbsMax) de moins au tour \(adjustedMaxDeltaRound)."
+                maxDeltaText = "Au tour \(adjustedMaxDeltaRound), la table laisse \(roundTotalBetDeltaAbsMax) plis sur la table."
             } else {
-                maxDeltaText = "Vous avez annoncé le bon nombre de plis au tour \(adjustedMaxDeltaRound)."
+                maxDeltaText = "Au tour \(adjustedMaxDeltaRound), les annonces tombent pile juste."
             }
             samples.append(InsightSample(
                 key: "round_total_bet_delta_abs_max",
@@ -717,7 +717,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(gameTotalBetDeltaAbs),
                 direction: .high,
-                text: "Écart cumulé entre les mises et les plis possibles: \(gameTotalBetDeltaAbs)."
+                text: "Sur la partie, les annonces s'éloignent du réel de \(gameTotalBetDeltaAbs) plis."
             ))
         }
         // TODO: Ajouter l'écart cumulé au cours de la partie (0 = tous les tours étaient parfaits)
@@ -728,7 +728,7 @@ extension GameManager {
                 category: "trump",
                 value: Double(bestGlobalSuit.value),
                 direction: .high,
-                text: "Atout dominant: \(displayName(for: bestGlobalSuit.key)) est sorti \(bestGlobalSuit.value) fois."
+                text: "Couleur star: \(displayName(for: bestGlobalSuit.key)) sort \(bestGlobalSuit.value) fois à l'atout."
             ))
         }
 
@@ -744,14 +744,14 @@ extension GameManager {
             category: "trump",
             value: suitStdDev,
             direction: .low,
-            text: "Atouts très équilibrés sur la partie."
+            text: "Les atouts ont tourné sans vraie couleur dominante."
         ))
         samples.append(InsightSample(
             key: "trump_distribution_unbalance",
             category: "trump",
             value: suitStdDev,
             direction: .high,
-            text: "Atouts très déséquilibrés (dominance nette d'une couleur)."
+            text: "Une couleur a clairement pris le pouvoir côté atout."
         ))
 
         if let bestPlayerSuit = trumpSelectionsByPlayer
@@ -762,7 +762,7 @@ extension GameManager {
                 category: "trump",
                 value: Double(bestPlayerSuit.2),
                 direction: .high,
-                text: "\(displayName(for: bestPlayerSuit.0)) a choisi \(displayName(for: bestPlayerSuit.1)) \(bestPlayerSuit.2) fois."
+                text: "\(displayName(for: bestPlayerSuit.0)) avait un faible pour \(displayName(for: bestPlayerSuit.1)): \(bestPlayerSuit.2) choix."
             ))
         }
 
@@ -772,7 +772,7 @@ extension GameManager {
                 category: "trump",
                 value: Double(trumpCancelCount),
                 direction: .high,
-                text: "\(trumpCancelCount) annulation(s) de choix d'atout."
+                text: "\(trumpCancelCount) choix d'atout ont été repris en main."
             ))
         }
 
@@ -782,7 +782,7 @@ extension GameManager {
                 category: "bidding",
                 value: Double(randomLeader.value),
                 direction: .high,
-                text: "\(displayName(for: randomLeader.key)) a misé aléatoirement \(randomLeader.value) fois en premier."
+                text: "\(displayName(for: randomLeader.key)) a lancé \(randomLeader.value) annonces au hasard en premier."
             ))
         }
 
@@ -794,14 +794,14 @@ extension GameManager {
                 category: "difficulty",
                 value: avgDifficulty,
                 direction: .high,
-                text: "Partie exigeante côté mains (indice \(String(format: "%.3f", avgDifficulty)))."
+                text: "Les mains n'ont pas fait de cadeau (indice \(String(format: "%.3f", avgDifficulty)))."
             ))
             samples.append(InsightSample(
                 key: "hand_easiness_game",
                 category: "difficulty",
                 value: avgDifficulty,
                 direction: .low,
-                text: "Partie plutôt facile côté mains (indice \(String(format: "%.3f", avgDifficulty)))."
+                text: "Les mains étaient plutôt confortables (indice \(String(format: "%.3f", avgDifficulty)))."
             ))
         }
 
@@ -828,7 +828,7 @@ extension GameManager {
                 category: "difficulty",
                 value: roundGapMax,
                 direction: .high,
-                text: "Au tour \(insightRoundLabel(r)), gros écart de difficulté (\(String(format: "%.3f", roundGapMax)))."
+                text: "Tour \(insightRoundLabel(r)): énorme écart de mains (\(String(format: "%.3f", roundGapMax)))."
             ))
         }
         if roundGapMin != Double.greatestFiniteMagnitude, let r = roundGapMinRound {
@@ -837,7 +837,7 @@ extension GameManager {
                 category: "difficulty",
                 value: roundGapMin,
                 direction: .low,
-                text: "Au tour \(insightRoundLabel(r)), difficulté très équitable (\(String(format: "%.3f", roundGapMin)))."
+                text: "Tour \(insightRoundLabel(r)): tout le monde partait presque à armes égales (\(String(format: "%.3f", roundGapMin)))."
             ))
         }
 
@@ -882,7 +882,7 @@ extension GameManager {
                     category: "difficulty",
                     value: upsetWin.score,
                     direction: .high,
-                    text: "\(displayName(for: upsetWin.player)) a eu un jeu pourri au tour \(insightRoundLabel(upsetWin.round)) et a gagné quand même!"
+                    text: "\(displayName(for: upsetWin.player)) gagne le tour \(insightRoundLabel(upsetWin.round)) avec une main franchement ingrate."
                 ))
             } else {
                 samples.append(InsightSample(
@@ -890,7 +890,7 @@ extension GameManager {
                     category: "difficulty",
                     value: upsetLose.score,
                     direction: .high,
-                    text: "\(displayName(for: upsetLose.player)) a eu un super jeu au tour \(insightRoundLabel(upsetLose.round)) et a réussi à perdre!"
+                    text: "\(displayName(for: upsetLose.player)) avait une main en or au tour \(insightRoundLabel(upsetLose.round)), mais la laisse filer."
                 ))
             }
         } else if let upsetWin = hardestHandWinner {
@@ -899,7 +899,7 @@ extension GameManager {
                 category: "difficulty",
                 value: upsetWin.score,
                 direction: .high,
-                text: "\(displayName(for: upsetWin.player)) a eu un jeu pourri au tour \(insightRoundLabel(upsetWin.round)) et a gagné quand même!"
+                text: "\(displayName(for: upsetWin.player)) gagne le tour \(insightRoundLabel(upsetWin.round)) avec une main franchement ingrate."
             ))
         } else if let upsetLose = easiestHandLoser {
             samples.append(InsightSample(
@@ -907,7 +907,7 @@ extension GameManager {
                 category: "difficulty",
                 value: upsetLose.score,
                 direction: .high,
-                text: "\(displayName(for: upsetLose.player)) a eu un super jeu au tour \(insightRoundLabel(upsetLose.round)) et a réussi à perdre!"
+                text: "\(displayName(for: upsetLose.player)) avait une main en or au tour \(insightRoundLabel(upsetLose.round)), mais la laisse filer."
             ))
         }
 
@@ -917,7 +917,7 @@ extension GameManager {
                 category: "trump",
                 value: maxConcentration.concentration,
                 direction: .high,
-                text: "\(displayName(for: maxConcentration.playerId)) a choisi \(displayName(for: maxConcentration.suit)) avec une forte concentration (\(Int((maxConcentration.concentration * 100).rounded()))%)."
+                text: "\(displayName(for: maxConcentration.playerId)) choisit \(displayName(for: maxConcentration.suit)) avec une main très chargée (\(Int((maxConcentration.concentration * 100).rounded()))%)."
             ))
         } else {
             samples.append(InsightSample(
@@ -925,7 +925,7 @@ extension GameManager {
                 category: "trump",
                 value: 0,
                 direction: .high,
-                text: "Aucune donnée de concentration d'atout disponible."
+                text: "Impossible de lire la concentration d'atout sur cette partie."
             ))
         }
         if let minConcentration = trumpChoiceConcentrationRecords.min(by: { $0.concentration < $1.concentration }) {
@@ -934,7 +934,7 @@ extension GameManager {
                 category: "trump",
                 value: minConcentration.concentration,
                 direction: .low,
-                text: "\(displayName(for: minConcentration.playerId)) a choisi \(displayName(for: minConcentration.suit)) avec peu de cartes (\(Int((minConcentration.concentration * 100).rounded()))%)."
+                text: "\(displayName(for: minConcentration.playerId)) ose \(displayName(for: minConcentration.suit)) avec peu de soutien (\(Int((minConcentration.concentration * 100).rounded()))%)."
             ))
         } else {
             samples.append(InsightSample(
@@ -942,7 +942,7 @@ extension GameManager {
                 category: "trump",
                 value: 0,
                 direction: .low,
-                text: "Aucune donnée de concentration d'atout disponible."
+                text: "Impossible de lire la concentration d'atout sur cette partie."
             ))
         }
 
@@ -1016,19 +1016,19 @@ extension GameManager {
         switch fact.metricKey {
         case "final_score_max", "final_score_min", "final_gap_1v2", "final_gap_close",
              "round_delta_max", "round_delta_min", "zero_score_round_latest":
-            variants = [fact.text, "Stat score: \(fact.text)", "Côté score: \(fact.text)"]
+            variants = [fact.text, "Scoreboard: \(fact.text)", "Lecture du score: \(fact.text)"]
         case "streak_exact_bid", "streak_missed_bid", "overbid_count", "underbid_count",
              "max_bid_error_abs", "round_total_bet_delta_abs_max", "game_total_bet_delta_abs_sum",
              "random_bet_first_player_count":
-            variants = [fact.text, "Côté mises: \(fact.text)", "Lecture des annonces: \(fact.text)"]
+            variants = [fact.text, "Annonces sous pression: \(fact.text)", "Lecture des mises: \(fact.text)"]
         case "trump_suit_global_max", "trump_suit_by_player_max", "trump_cancel_count",
              "trump_chooser_suit_concentration_max", "trump_chooser_suit_concentration_min":
-            variants = [fact.text, "Côté atout: \(fact.text)", "Tendance atout: \(fact.text)"]
+            variants = [fact.text, "Signal atout: \(fact.text)", "Côté couleurs: \(fact.text)"]
         case "hand_difficulty_game", "hand_easiness_game", "round_difficulty_gap_max",
              "round_difficulty_gap_min", "mid_card_density_max_round":
-            variants = [fact.text, "Lecture des mains: \(fact.text)", "Côté difficulté: \(fact.text)"]
+            variants = [fact.text, "Lecture des mains: \(fact.text)", "Niveau de difficulté: \(fact.text)"]
         default:
-            variants = [fact.text, "Fait marquant: \(fact.text)", "À noter: \(fact.text)"]
+            variants = [fact.text, "Moment clé: \(fact.text)", "À retenir: \(fact.text)"]
         }
         let index = stableVariantIndex(for: fact.metricKey, value: fact.value, optionsCount: variants.count)
         return GameInsightFact(
