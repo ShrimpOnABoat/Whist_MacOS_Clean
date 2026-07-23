@@ -35,7 +35,6 @@ struct GameView: View {
     @State private var background: AnyView = AnyView(EmptyView())
     @State private var backgroundBaseColorIndex: Int = 0
     @State private var isHonkOnCooldown: Bool = false
-    @State private var gameStateRefreshTick: Int = 0
     
     private var shouldShowPostGameOverlay: Bool {
         gameManager.gameState.currentPhase == .waitingToStart &&
@@ -520,9 +519,6 @@ struct GameView: View {
                         gameManager.checkDeckMeasurementReadiness(reason: "entered renderingDeck from GameView")
                     }
                 }
-            }
-            .onReceive(gameManager.gameState.objectWillChange) { _ in
-                gameStateRefreshTick &+= 1
             }
             // End GeometryReader
             if gameManager.isRestoring {

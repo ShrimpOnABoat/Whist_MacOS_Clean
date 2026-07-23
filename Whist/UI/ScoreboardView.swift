@@ -89,7 +89,7 @@ struct ScoreBoardView: View {
                                     .fontWeight(.semibold)
                                     .foregroundColor(panelTextColor)
                                 if player.onlyWinsBonus {
-                                    Text("+5")
+                                    Text("+\(player.onlyWinsBonusPoints)")
                                         .font(.system(size: dynamicSize.scoreSize * 0.6))
                                         .fontWeight(.bold)
                                         .foregroundColor(Color(red: 0.68, green: 0.95, blue: 0.56))

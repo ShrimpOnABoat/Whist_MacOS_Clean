@@ -30,7 +30,11 @@ enum PlayerId: String, Codable, CaseIterable {
 
 @MainActor
 class GameManager: ObservableObject {
-    @Published var gameState: GameState = GameState()
+    @Published var gameState: GameState = GameState() {
+        didSet {
+            observeGameStateChanges()
+        }
+    }
     @Published var showOptions: Bool = false
     @Published var showLastTrick: Bool = false
     @Published var movingCards: [MovingCard] = []
@@ -80,6 +84,7 @@ class GameManager: ObservableObject {
     var persistence: GamePersistence = GamePersistence()
     
     var cancellables = Set<AnyCancellable>()
+    private var gameStateChangeCancellable: AnyCancellable?
     var isGameSetup: Bool = false
     var isAwaitingActionCompletionDuringRestore: Bool = false
     @Published var autoPilot: Bool = false
@@ -140,6 +145,14 @@ class GameManager: ObservableObject {
         self.connectionManager = connectionManager
         self.signalingManager = signalingManager
         self.preferences = preferences
+        observeGameStateChanges()
+    }
+
+    private func observeGameStateChanges() {
+        gameStateChangeCancellable = gameState.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
     }
     
     // MARK: - Game State Initialization

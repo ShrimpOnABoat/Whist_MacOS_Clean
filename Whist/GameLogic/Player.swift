@@ -88,6 +88,27 @@ class Player: Identifiable, ObservableObject, Codable {
     var isP2PConnected: Bool {
         connectionPhase == .connected
     }
+
+    /// The longest-from-start streak bonus currently earned by this player.
+    /// Internal rounds 1...3 are the opening one-card rounds, so a player who
+    /// has won the first seven rounds is still perfect when the six-card round
+    /// (internal round 8) begins.
+    var onlyWinsBonusPoints: Int {
+        guard onlyWinsBonus else { return 0 }
+
+        let completedRoundsBeforeSixCards = 7
+        guard announcedTricks.count >= completedRoundsBeforeSixCards,
+              madeTricks.count >= completedRoundsBeforeSixCards else {
+            return 5
+        }
+
+        let streakReachedSixCardRound = zip(
+            announcedTricks.prefix(completedRoundsBeforeSixCards),
+            madeTricks.prefix(completedRoundsBeforeSixCards)
+        ).allSatisfy(==)
+
+        return streakReachedSixCardRound ? 10 : 5
+    }
     
     init(id: PlayerId, username: String? = nil, image: Image? = nil) {
         self.id = id

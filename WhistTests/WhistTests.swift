@@ -88,6 +88,32 @@ struct WhistTests {
         #expect(!GameAction.ActionType.honk.isDurableOrdered)
     }
 
+    @Test func streakBonusIncreasesWhenStreakReachesSixCardRound() {
+        let player = Player(id: .gg)
+        player.onlyWinsBonus = true
+        player.announcedTricks = Array(repeating: 0, count: 7)
+        player.madeTricks = Array(repeating: 0, count: 7)
+
+        #expect(player.onlyWinsBonusPoints == 10)
+    }
+
+    @Test func streakBonusRemainsFiveIfStreakEndedBeforeSixCardRound() {
+        let player = Player(id: .gg)
+        player.onlyWinsBonus = true
+        player.announcedTricks = Array(repeating: 0, count: 7)
+        player.madeTricks = [0, 0, 0, 0, 0, 0, 1]
+
+        #expect(player.onlyWinsBonusPoints == 5)
+    }
+
+    @Test func ineligiblePlayerHasNoStreakBonus() {
+        let player = Player(id: .gg)
+        player.announcedTricks = Array(repeating: 0, count: 7)
+        player.madeTricks = Array(repeating: 0, count: 7)
+
+        #expect(player.onlyWinsBonusPoints == 0)
+    }
+
     @Test func perfectGameBonusCountsOnePointPerPerfectGame() {
         let scores = [
             makeScore(ggConsecutiveWins: 12, ddConsecutiveWins: 11, totoConsecutiveWins: nil),

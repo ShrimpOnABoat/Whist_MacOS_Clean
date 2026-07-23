@@ -547,7 +547,6 @@ extension GameManager {
             setPlayerState(to: .idle)
             playSound(named: "applaud")
             isFirstGame = false
-            showPostGameResultScreen = true
             guard !isFinalizingGameOver else {
                 logger.log("Game-over finalization already in progress. Ignoring duplicate trigger.")
                 return
@@ -561,6 +560,8 @@ extension GameManager {
                 self.isFinalizingGameOver = false
                 logger.log("Game-over finalization complete. Returning to waitingToStart.")
                 self.transition(to: .waitingToStart)
+                // Publish the overlay change only after the phase predicate is true.
+                self.showPostGameResultScreen = true
             }
 
             // Avoid re-entrant transition work inside the same state-machine call.
@@ -884,13 +885,14 @@ extension GameManager {
                 logger.log("No bonus added due to tie among highest bidders.")
             }
             
-            // Add the bonus for the longest streak
-            // Add +5 to all players who kept the only-wins bonus
+            // Add the bonus for the longest streak. It increases from +5 to
+            // +10 if the streak was still intact when the six-card round began.
             for p in gameState.players where p.onlyWinsBonus {
                 let lastIndex = p.scores.count - 1
                 if lastIndex >= 0 {
-                    p.scores[lastIndex] += 5
-                    logger.log("Only-wins streak bonus added to \(p.username): +5 points")
+                    let bonusPoints = p.onlyWinsBonusPoints
+                    p.scores[lastIndex] += bonusPoints
+                    logger.log("Only-wins streak bonus added to \(p.username): +\(bonusPoints) points")
                 }
             }
             
