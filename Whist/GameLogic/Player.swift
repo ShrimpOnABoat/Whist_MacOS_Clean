@@ -97,7 +97,8 @@ class Player: Identifiable, ObservableObject, Codable {
         guard onlyWinsBonus else { return 0 }
 
         let completedRoundsBeforeSixCards = 7
-        guard announcedTricks.count >= completedRoundsBeforeSixCards,
+        guard scores.count >= completedRoundsBeforeSixCards,
+              announcedTricks.count >= completedRoundsBeforeSixCards,
               madeTricks.count >= completedRoundsBeforeSixCards else {
             return 5
         }

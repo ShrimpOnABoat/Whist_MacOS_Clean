@@ -91,15 +91,27 @@ struct WhistTests {
     @Test func streakBonusIncreasesWhenStreakReachesSixCardRound() {
         let player = Player(id: .gg)
         player.onlyWinsBonus = true
+        player.scores = Array(repeating: 10, count: 7)
         player.announcedTricks = Array(repeating: 0, count: 7)
         player.madeTricks = Array(repeating: 0, count: 7)
 
         #expect(player.onlyWinsBonusPoints == 10)
     }
 
+    @Test func zeroBidPlaceholderDoesNotIncreaseStreakBonusBeforeRoundIsScored() {
+        let player = Player(id: .gg)
+        player.onlyWinsBonus = true
+        player.scores = Array(repeating: 10, count: 6)
+        player.announcedTricks = Array(repeating: 0, count: 7)
+        player.madeTricks = Array(repeating: 0, count: 7)
+
+        #expect(player.onlyWinsBonusPoints == 5)
+    }
+
     @Test func streakBonusRemainsFiveIfStreakEndedBeforeSixCardRound() {
         let player = Player(id: .gg)
         player.onlyWinsBonus = true
+        player.scores = Array(repeating: 10, count: 7)
         player.announcedTricks = Array(repeating: 0, count: 7)
         player.madeTricks = [0, 0, 0, 0, 0, 0, 1]
 
@@ -108,6 +120,7 @@ struct WhistTests {
 
     @Test func ineligiblePlayerHasNoStreakBonus() {
         let player = Player(id: .gg)
+        player.scores = Array(repeating: 10, count: 7)
         player.announcedTricks = Array(repeating: 0, count: 7)
         player.madeTricks = Array(repeating: 0, count: 7)
 
