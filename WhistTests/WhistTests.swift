@@ -184,6 +184,31 @@ struct WhistTests {
         #expect(!isPerfectGame(consecutiveWins: nil))
     }
 
+    @Test func specialTournamentReplacesTheMonthAndAppearsLast() {
+        let tournamentID = UUID()
+        let scores = [
+            makeScore(year: 2026, month: 1, ggScore: 100, ddScore: 80, totoScore: 60, ggPosition: 1, ddPosition: 2, totoPosition: 3),
+            GameScore(
+                date: Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 2, day: 1))!,
+                ggScore: 60,
+                ddScore: 100,
+                totoScore: 80,
+                ggPosition: 3,
+                ddPosition: 1,
+                totoPosition: 2,
+                tournamentID: tournamentID,
+                tournamentName: "Vacances 2026"
+            )
+        ]
+
+        let summaries = computeMonthlySummaries(for: 2026, scores: scores)
+
+        #expect(summaries.map(\.month) == ["Janvier", "Vacances 2026"])
+        #expect(summaries[1].ddTally == 2)
+        #expect(summaries[1].totoTally == 1)
+        #expect(summaries[1].ggTally == 0)
+    }
+
     private func makeScore(
         year: Int = 2026,
         month: Int = 1,

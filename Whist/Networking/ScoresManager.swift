@@ -19,10 +19,15 @@ struct GameScore: Codable, Identifiable {
     let ggConsecutiveWins: Int?
     let ddConsecutiveWins: Int?
     let totoConsecutiveWins: Int?
+    /// Tournament metadata is written by the companion app and lets this app
+    /// keep special-period games out of their calendar-month standings.
+    let tournamentID: UUID?
+    let tournamentName: String?
 
     init(date: Date, ggScore: Int, ddScore: Int, totoScore: Int,
          ggPosition: Int? = nil, ddPosition: Int? = nil, totoPosition: Int? = nil,
-         ggConsecutiveWins: Int? = nil, ddConsecutiveWins: Int? = nil, totoConsecutiveWins: Int? = nil) {
+         ggConsecutiveWins: Int? = nil, ddConsecutiveWins: Int? = nil, totoConsecutiveWins: Int? = nil,
+         tournamentID: UUID? = nil, tournamentName: String? = nil) {
         self.date = date
         self.ggScore = ggScore
         self.ddScore = ddScore
@@ -33,6 +38,8 @@ struct GameScore: Codable, Identifiable {
         self.ggConsecutiveWins = ggConsecutiveWins
         self.ddConsecutiveWins = ddConsecutiveWins
         self.totoConsecutiveWins = totoConsecutiveWins
+        self.tournamentID = tournamentID
+        self.tournamentName = tournamentName
     }
 
     enum CodingKeys: String, CodingKey {
@@ -46,6 +53,8 @@ struct GameScore: Codable, Identifiable {
         case ggConsecutiveWins = "gg_consecutive_wins"
         case ddConsecutiveWins = "dd_consecutive_wins"
         case totoConsecutiveWins = "toto_consecutive_wins"
+        case tournamentID = "tournament_id"
+        case tournamentName = "tournament_name"
     }
 }
 
@@ -362,7 +371,9 @@ class ScoresManager {
                     totoPosition: score.totoPosition ?? positionByKey["toto"],
                     ggConsecutiveWins: score.ggConsecutiveWins,
                     ddConsecutiveWins: score.ddConsecutiveWins,
-                    totoConsecutiveWins: score.totoConsecutiveWins
+                    totoConsecutiveWins: score.totoConsecutiveWins,
+                    tournamentID: score.tournamentID,
+                    tournamentName: score.tournamentName
                 )
             }
 

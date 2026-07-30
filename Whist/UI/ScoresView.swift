@@ -394,6 +394,7 @@ func computeMonthlySummaries(for year: Int) async -> [MonthlySummary] {
 }
 
 func computeMonthlySummaries(for year: Int, scores: [GameScore]) -> [MonthlySummary] {
+    let calendar = Calendar.current
     let monthNames = [
         1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",
         5: "Mai", 6: "Juin", 7: "Juillet", 8: "Août",
@@ -401,10 +402,21 @@ func computeMonthlySummaries(for year: Int, scores: [GameScore]) -> [MonthlySumm
     ]
     
     var monthlyData: [Int: (gg: Int, dd: Int, toto: Int)] = [:]
+    var tournamentData: [UUID: (name: String, points: (gg: Int, dd: Int, toto: Int))] = [:]
     
     for score in scores {
-        let calendar = Calendar.current
         guard calendar.component(.year, from: score.date) == year else { continue }
+
+        if let tournamentID = score.tournamentID, let tournamentName = score.tournamentName {
+            let gamePoints = calculateGamePoints(for: score)
+            var tournament = tournamentData[tournamentID] ?? (tournamentName, (0, 0, 0))
+            tournament.points.gg += gamePoints.gg
+            tournament.points.dd += gamePoints.dd
+            tournament.points.toto += gamePoints.toto
+            tournamentData[tournamentID] = tournament
+            continue
+        }
+
         let gameMonth = calendar.component(.month, from: score.date)
         
         if monthlyData[gameMonth] == nil {
@@ -434,6 +446,27 @@ func computeMonthlySummaries(for year: Int, scores: [GameScore]) -> [MonthlySumm
     let order = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
     summaries.sort { order.firstIndex(of: $0.month)! < order.firstIndex(of: $1.month)! }
+
+    let tournamentOrder = scores
+        .filter { calendar.component(.year, from: $0.date) == year && $0.tournamentID != nil }
+        .sorted { $0.date < $1.date }
+        .compactMap(\.tournamentID)
+        .reduce(into: [UUID]()) { ids, id in
+            if !ids.contains(id) { ids.append(id) }
+        }
+    for tournamentID in tournamentOrder {
+        guard let tournament = tournamentData[tournamentID] else { continue }
+        let tallies = calculateTallies(for: tournament.points)
+        summaries.append(MonthlySummary(
+            month: tournament.name,
+            ggPoints: tournament.points.gg,
+            ddPoints: tournament.points.dd,
+            totoPoints: tournament.points.toto,
+            ggTally: tallies.gg,
+            ddTally: tallies.dd,
+            totoTally: tallies.toto
+        ))
+    }
     
     return summaries
 }
@@ -705,9 +738,14 @@ struct DetailedScoresView: View {
             self.longestStreakPlayers = longest.players
         }
         
-        // Group by month
+        // Group regular games by month and special-period games by tournament.
         var byMonth: [Int: [GameScore]] = [:]
+        var byTournament: [UUID: [GameScore]] = [:]
         for score in yearScores {
+            if let tournamentID = score.tournamentID {
+                byTournament[tournamentID, default: []].append(score)
+                continue
+            }
             let month = calendar.component(.month, from: score.date)
             byMonth[month, default: []].append(score)
         }
@@ -715,7 +753,7 @@ struct DetailedScoresView: View {
         // Build month groups with tallies
         let monthNames = ["Janvier","Février","Mars","Avril","Mai","Juin",
                           "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
-        let groups: [MonthGroup] = byMonth.keys.sorted().compactMap { month in
+        var groups: [MonthGroup] = byMonth.keys.sorted().compactMap { month in
             let scores = byMonth[month]!.sorted { $0.date < $1.date }
             // Calculate monthly tallies
             var monthlyPoints = (gg: 0, dd: 0, toto: 0)
@@ -730,6 +768,27 @@ struct DetailedScoresView: View {
                 tallies: monthlyPoints,
                 scores: scores
             )
+        }
+
+        let tournamentOrder = yearScores
+            .filter { $0.tournamentID != nil }
+            .sorted { $0.date < $1.date }
+            .compactMap(\.tournamentID)
+            .reduce(into: [UUID]()) { ids, id in
+                if !ids.contains(id) { ids.append(id) }
+            }
+        for tournamentID in tournamentOrder {
+            guard let tournamentScores = byTournament[tournamentID],
+                  let name = tournamentScores.first?.tournamentName else { continue }
+            let sortedScores = tournamentScores.sorted { $0.date < $1.date }
+            var points = (gg: 0, dd: 0, toto: 0)
+            for score in sortedScores {
+                let gamePoints = calculateGamePoints(for: score)
+                points.gg += gamePoints.gg
+                points.dd += gamePoints.dd
+                points.toto += gamePoints.toto
+            }
+            groups.append(MonthGroup(monthName: name, tallies: points, scores: sortedScores))
         }
         
         await MainActor.run {
