@@ -170,10 +170,10 @@ struct WhistTests {
 
         #expect(summary.monthlySummaries.count == 1)
         #expect(summary.perfectGameBonuses.gg == 1)
-        #expect(summary.total.gg == 3)
+        #expect(summary.total.gg == 2)
         #expect(summary.total.dd == 1)
         #expect(summary.total.toto == 0)
-        #expect(summary.total.ggTally == 2)
+        #expect(summary.total.ggTally == 3)
         #expect(summary.total.ddTally == 1)
         #expect(summary.total.totoTally == 0)
     }

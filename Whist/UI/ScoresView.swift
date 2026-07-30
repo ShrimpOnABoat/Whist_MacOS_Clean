@@ -102,9 +102,9 @@ struct AnnualScoreSummary {
             total.ddTally += summary.ddTally
             total.totoTally += summary.totoTally
         }
-        total.gg += perfectGameBonuses.gg
-        total.dd += perfectGameBonuses.dd
-        total.toto += perfectGameBonuses.toto
+        total.ggTally += perfectGameBonuses.gg
+        total.ddTally += perfectGameBonuses.dd
+        total.totoTally += perfectGameBonuses.toto
         return total
     }
 
@@ -280,18 +280,18 @@ struct SummaryView: View {
                     HStack {
                         Text("Bonus parties parfaites").frame(width: 100, alignment: .leading).foregroundColor(.secondary)
                         Spacer()
+                        Text("").frame(width: 40, alignment: .center)
+                        Text("").frame(width: 40, alignment: .center)
+                        Text("").frame(width: 40, alignment: .center)
+                        Rectangle()
+                            .frame(width: 1, height: 20)
+                            .foregroundColor(Color(NSColor.separatorColor))
                         bonusText(annualSummary.perfectGameBonuses.gg)
                             .frame(width: 40, alignment: .center)
                         bonusText(annualSummary.perfectGameBonuses.dd)
                             .frame(width: 40, alignment: .center)
                         bonusText(annualSummary.perfectGameBonuses.toto)
                             .frame(width: 40, alignment: .center)
-                        Rectangle()
-                            .frame(width: 1, height: 20)
-                            .foregroundColor(Color(NSColor.separatorColor))
-                        Text("").frame(width: 40, alignment: .center)
-                        Text("").frame(width: 40, alignment: .center)
-                        Text("").frame(width: 40, alignment: .center)
                     }
                     .padding(.vertical, 2)
                 }
