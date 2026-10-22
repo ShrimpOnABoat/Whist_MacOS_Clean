@@ -8,7 +8,6 @@
 import SwiftUI
 import Firebase
 import FirebaseAppCheck
-import FirebaseAuth
 import AppKit
 
 @main
@@ -29,22 +28,6 @@ struct WhistApp: App {
         logger.log("Firebase App Check configured with DeviceCheck provider.")
         #endif
         FirebaseApp.configure()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            do {
-                try Auth.auth().signOut()
-                logger.log("✅ Signed out previous anonymous user")
-            } catch {
-                logger.log("⚠️ Could not sign out anonymous user: \(error.localizedDescription)")
-            }
-            Auth.auth().signInAnonymously { authResult, error in
-                if let error = error {
-                    logger.log("❌ Firebase anonymous sign-in failed: \(error.localizedDescription)")
-                } else if let uid = authResult?.user.uid {
-                    logger.log("✅ Signed in anonymously with UID: \(uid)")
-                }
-            }
-        }
-        logger.log("Firebase UID: \(Auth.auth().currentUser?.uid ?? "nil")")
         let settings = FirestoreSettings()
         #if DEBUG
         settings.cacheSettings = MemoryCacheSettings()
@@ -119,7 +102,6 @@ struct WhistApp: App {
                                 window.minSize = NSSize(width: 800, height: 600)
                             }
                             logger.setLocalPlayer(with: preferences.playerId)
-                            PresenceManager.shared.configure(with: preferences.playerId)
                         }
                 }
             }

@@ -11,7 +11,7 @@
 import Foundation
 import FirebaseFirestore
 
-class FirebaseService {
+class FirebaseService: GameActionStore {
     static let shared = FirebaseService()
     private let db = Firestore.firestore()
     private let gameStatesCollection = "gameStates"
@@ -26,45 +26,54 @@ class FirebaseService {
     
     // MARK: - Monotonic Action Sequence (Counter)
     
-    /// Returns the next strictly increasing sequence number for actions.
-    /// The counter is stored in Firestore at: counters/{gameId}
-    /// Field: "next" (Int). If missing, it initializes to 1.
-    /// This uses a Firestore transaction to guarantee atomicity across clients.
-    func nextActionSequence() async throws -> Int {
-        try await withCheckedThrowingContinuation { continuation in
-            db.runTransaction({ (transaction, errorPointer) -> Any? in
-                let counterRef = self.db.collection(self.countersCollection).document(self.counterId)
-                var current: Int = 1
-                do {
-                    let snapshot = try transaction.getDocument(counterRef)
-                    if snapshot.exists {
-                        if let value = snapshot.data()?["next"] as? NSNumber {
-                            current = Int(truncating: value)
-                        } else {
-                            current = 1
-                        }
-                    } else {
-                        current = 1
-                    }
-                    // Assign this value and bump for next time
-                    transaction.setData(["next": NSNumber(value: current + 1)], forDocument: counterRef, merge: true)
-                    return NSNumber(value: current)
-                } catch let err as NSError {
-                    errorPointer?.pointee = err
-                    return nil
+    /// Allocate the sequence and save its action in one server transaction. Retrying
+    /// the same document ID after a lost acknowledgement returns the original action.
+    func commitGameAction(_ draft: GameAction, documentID: String) async throws -> GameAction {
+        let counterRef = db.collection(countersCollection).document(counterId)
+        let actionRef = db.collection(gameActionsCollection).document(documentID)
+        let result = try await db.runTransaction { transaction, errorPointer -> Any? in
+            do {
+                let existing = try transaction.getDocument(actionRef)
+                if existing.exists {
+                    return try JSONEncoder().encode(existing.data(as: GameAction.self))
                 }
-            }, completion: { result, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let number = result as? NSNumber {
-                    continuation.resume(returning: Int(truncating: number))
-                } else {
-                    continuation.resume(throwing: NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to allocate sequence"]))
-                }
-            })
+                let counter = try transaction.getDocument(counterRef)
+                let sequence = (counter.data()?["next"] as? NSNumber)?.intValue ?? 1
+                let action = GameAction(playerId: draft.playerId, type: draft.type,
+                                        payload: draft.payload, timestamp: draft.timestamp,
+                                        sequence: sequence, context: draft.context)
+                try transaction.setData(from: action, forDocument: actionRef)
+                transaction.setData(["next": sequence + 1], forDocument: counterRef, merge: true)
+                return try JSONEncoder().encode(action)
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
         }
+        guard let data = result as? Data else {
+            throw NSError(domain: "FirebaseService", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing committed game action"])
+        }
+        return try JSONDecoder().decode(GameAction.self, from: data)
     }
-    
+
+    /// Listen to one small counter document. Fetch move data only when P2P did
+    /// not deliver it; normal traffic does not need a second copy of every move.
+    func observeActionSequence(_ onChange: @escaping (Result<Int, Error>) -> Void) -> GameActionObservation {
+        let listener = db.collection(countersCollection).document(counterId)
+            .addSnapshotListener(includeMetadataChanges: true) { snapshot, error in
+                if let error {
+                    Task { @MainActor in onChange(.failure(error)) }
+                    return
+                }
+                guard let snapshot, !snapshot.metadata.isFromCache,
+                      !snapshot.metadata.hasPendingWrites else { return }
+                let next = (snapshot.data()?["next"] as? NSNumber)?.intValue ?? 1
+                Task { @MainActor in onChange(.success(max(0, next - 1))) }
+            }
+        return GameActionObservation { listener.remove() }
+    }
+
     /// Reads the current value of the monotonic action sequence counter from Firestore.
     /// If the document or field is missing, returns 1 as the initial default.
     func getCurrentActionSequence() async throws -> Int {
@@ -80,8 +89,9 @@ class FirebaseService {
     // MARK: - Game Actions
     
     func saveGameAction(_ action: GameAction) async throws {
-        try db.collection(gameActionsCollection)
-            .addDocument(from: action)
+        let data = try Firestore.Encoder().encode(action)
+        try await db.collection(gameActionsCollection)
+            .document("sequence-\(action.sequence)").setData(data)
     }
     
     func loadGameAction() async throws -> [GameAction] {
@@ -323,7 +333,7 @@ class FirebaseService {
             q = q.whereField("sequence", isLessThanOrEqualTo: end)
         }
         q = q.order(by: "sequence", descending: false)
-        let snap = try await q.getDocuments()
+        let snap = try await q.getDocuments(source: .server)
         return try snap.documents.compactMap { try $0.data(as: GameAction.self) }
     }
 }

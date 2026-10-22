@@ -49,6 +49,21 @@ enum GamePhase: Encodable, Decodable {
 
 
 extension GameManager {
+    var autoPilotShouldWinTricks: Bool {
+        guard let localPlayer = gameState.localPlayer,
+              let bid = localPlayer.announcedTricks[safe: gameState.round - 1] else { return false }
+        return bid > (localPlayer.madeTricks[safe: gameState.round - 1] ?? 0)
+    }
+
+    func setAutoPilotEnabled(_ enabled: Bool) {
+        guard autoPilot != enabled else { return }
+        autoPilot = enabled
+        if enabled, !isRestoring, gameState.currentPhase == .playingTricks,
+           isLocalPlayerTurnToPlay() {
+            checkAndAdvanceStateIfNeeded()
+        }
+    }
+
     var shouldAutoPlayCards: Bool {
         if preferences.autoPlayLastCard, let handCount = gameState.localPlayer?.hand.count, handCount == 1 {
             return true
@@ -182,24 +197,18 @@ extension GameManager {
     // MARK: setPlayerState
     
     func setPlayerState(to newState: PlayerState) {
-        // Cancel any existing slowpoke timer whenever the player state changes
-        cancelSlowpokeTimer()
         if gameState.localPlayer?.state != newState {
+            cancelSlowpokeTimer()
             gameState.localPlayer?.state = newState
-            // If entering a state where the player must act, start the slowpoke timer
             if !isRestoring {
-                switch newState {
-                case .choosingTrump, .bidding, .discarding, .playing:
-                    startSlowpokeTimer()
-                default:
-                    break
-                }
                 logger.log("My state is now \(newState)")
                 sendStateToPlayers()
             } else {
                 logger.log("My state is now \(newState) (restore mode: no broadcast)")
             }
         }
+        // Phase rechecks must preserve the elapsed time for an ongoing decision.
+        refreshSlowpokeTimer()
     }
     
     // MARK: handleStateTransition
@@ -461,6 +470,9 @@ extension GameManager {
                 setPlayableCards()
                 if shouldAutoPlayCards && !isRestoring {
                     waitForAnimationsToFinish {
+                        guard self.shouldAutoPlayCards, !self.isRestoring,
+                              self.gameState.currentPhase == .playingTricks,
+                              self.isLocalPlayerTurnToPlay() else { return }
                         self.AIPlayCard() {
                             if self.allPlayersPlayed() {
                                 self.transition(to: .grabTrick)
@@ -926,6 +938,10 @@ extension GameManager {
         pendingActions.removeAll()
         
         for action in remainingActions {
+            if action.type.isDurableOrdered && action.sequence <= lastAppliedSequence {
+                localActionCompletions.removeValue(forKey: action.sequence)
+                continue
+            }
             if action.type.isDurableOrdered && action.sequence != lastAppliedSequence + 1 {
                 logger.log("Action \(action.type) seq \(action.sequence) is waiting for seq \(lastAppliedSequence + 1)")
                 pendingActions.append(action)
@@ -934,11 +950,14 @@ extension GameManager {
 
             if action.type.isDurableOrdered && shouldIgnoreOrderedAction(action) {
                 lastAppliedSequence = max(lastAppliedSequence, action.sequence)
+                localActionCompletions.removeValue(forKey: action.sequence)
+                promoteReadyBufferedOrderedActionsToPending()
+                atLeastOneActionProcessed = true
                 logger.log("Dropping stale ordered action \(action.type) seq \(action.sequence) from pending queue")
             } else if action.type.isDurableOrdered && shouldDeferOrderedAction(action) {
                 logger.log("Ordered action \(action.type) seq \(action.sequence) is still waiting for runtime state to catch up.")
                 pendingActions.append(action)
-            } else if action.type.isDurableOrdered && !isActionValidInCurrentPhase(action.type) {
+            } else if action.type.isDurableOrdered && !isActionReadyForCurrentPhase(action) {
                 logger.log("Ordered action \(action.type) seq \(action.sequence) is waiting for phase \(gameState.currentPhase) to become valid.")
                 pendingActions.append(action)
             } else if action.type.isDurableOrdered {
@@ -968,6 +987,21 @@ extension GameManager {
     }
     
     // MARK: - Slowpoke Timer Helpers
+
+    func refreshSlowpokeTimer() {
+        guard !isRestoring, let localPlayer = gameState.localPlayer else {
+            cancelSlowpokeTimer()
+            return
+        }
+        switch localPlayer.state {
+        case .choosingTrump, .bidding, .discarding, .playing:
+            if slowpokeTimer == nil && !amSlowPoke {
+                startSlowpokeTimer()
+            }
+        default:
+            cancelSlowpokeTimer()
+        }
+    }
     
     /// Cancels any existing slowpoke timer.
     func cancelSlowpokeTimer() {
@@ -980,13 +1014,16 @@ extension GameManager {
     func startSlowpokeTimer() {
         cancelSlowpokeTimer()
         guard let localPlayer = gameState.localPlayer else { return }
+        let decisionState = localPlayer.state
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
         timer.schedule(deadline: .now() + slowpokeDelay)
         timer.setEventHandler { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.isRestoring,
+                  self.gameState.localPlayer === localPlayer,
+                  localPlayer.state == decisionState else { return }
             logger.log("Slowpoke timer fired for \(localPlayer.id)")
             self.sendAmSlowPoke()
-            amSlowPoke = true
+            self.amSlowPoke = true
         }
         timer.resume()
         slowpokeTimer = timer

@@ -386,14 +386,7 @@ struct GameView: View {
                                 )
                                 {
                                     withAnimation(.easeInOut(duration: 0.1)) {
-                                        gameManager.autoPilot.toggle()
-                                        if gameManager.autoPilot {
-                                            if let localPlayer = gameManager.gameState.localPlayer {
-                                                if localPlayer.announcedTricks.count > localPlayer.madeTricks.count {
-                                                    gameManager.autoPilotShouldWinTricks = true
-                                                }
-                                            }
-                                        }
+                                        gameManager.setAutoPilotEnabled(!gameManager.autoPilot)
                                     }
                                 }
                             } else {

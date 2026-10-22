@@ -407,7 +407,8 @@ func computeMonthlySummaries(for year: Int, scores: [GameScore]) -> [MonthlySumm
     for score in scores {
         guard calendar.component(.year, from: score.date) == year else { continue }
 
-        if let tournamentID = score.tournamentID, let tournamentName = score.tournamentName {
+        if let tournamentID = score.tournamentID {
+            let tournamentName = score.tournamentName ?? "Tournoi"
             let gamePoints = calculateGamePoints(for: score)
             var tournament = tournamentData[tournamentID] ?? (tournamentName, (0, 0, 0))
             tournament.points.gg += gamePoints.gg
@@ -475,23 +476,11 @@ func computeMonthlySummaries(for year: Int, scores: [GameScore]) -> [MonthlySumm
 func calculateGamePoints(for game: GameScore) -> (gg: Int, dd: Int, toto: Int) {
     // If position information is available, use it.
     if let ggPos = game.ggPosition, let ddPos = game.ddPosition, let totoPos = game.totoPosition {
-        let positions = [("gg", ggPos), ("dd", ddPos), ("toto", totoPos)]
-        let sorted = positions.sorted { $0.1 < $1.1 } // lower is better
-        var points = (gg: 0, dd: 0, toto: 0)
-        // First gets 2 points, second gets 1, third gets 0.
-        switch sorted[0].0 {
-        case "gg": points.gg = 2
-        case "dd": points.dd = 2
-        case "toto": points.toto = 2
-        default: break
+        // Imported games may have shared ranks. Equal ranks earn equal points.
+        let pointsForPosition = { (position: Int) in
+            position == 1 ? 2 : (position == 2 ? 1 : 0)
         }
-        switch sorted[1].0 {
-        case "gg": points.gg = 1
-        case "dd": points.dd = 1
-        case "toto": points.toto = 1
-        default: break
-        }
-        return points
+        return (gg: pointsForPosition(ggPos), dd: pointsForPosition(ddPos), toto: pointsForPosition(totoPos))
     } else {
         // Positions not available, so use score values.
         let scores: [(String, Int)] = [("gg", game.ggScore), ("dd", game.ddScore), ("toto", game.totoScore)]
@@ -778,8 +767,8 @@ struct DetailedScoresView: View {
                 if !ids.contains(id) { ids.append(id) }
             }
         for tournamentID in tournamentOrder {
-            guard let tournamentScores = byTournament[tournamentID],
-                  let name = tournamentScores.first?.tournamentName else { continue }
+            guard let tournamentScores = byTournament[tournamentID] else { continue }
+            let name = tournamentScores.first?.tournamentName ?? "Tournoi"
             let sortedScores = tournamentScores.sorted { $0.date < $1.date }
             var points = (gg: 0, dd: 0, toto: 0)
             for score in sortedScores {

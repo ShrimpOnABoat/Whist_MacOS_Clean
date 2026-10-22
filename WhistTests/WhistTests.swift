@@ -209,6 +209,25 @@ struct WhistTests {
         #expect(summaries[1].ggTally == 0)
     }
 
+    @Test @MainActor func restoredSessionReusesFinalScoreDocumentID() {
+        let sessionID = UUID()
+        let payload = GameAction.StartNewGamePayload(
+            playOrder: [.dd, .gg, .toto],
+            dealer: .dd,
+            sessionId: sessionID.uuidString
+        )
+
+        let originalManager = makeGameManager()
+        originalManager.applyStartNewGamePayloadIfPresent(payload)
+
+        let restoredManager = makeGameManager()
+        restoredManager.applyStartNewGamePayloadIfPresent(payload)
+
+        #expect(originalManager.scoreIDForCurrentGame() == sessionID)
+        #expect(restoredManager.scoreIDForCurrentGame() == sessionID)
+        #expect(originalManager.scoreIDForCurrentGame() == restoredManager.scoreIDForCurrentGame())
+    }
+
     private func makeScore(
         year: Int = 2026,
         month: Int = 1,

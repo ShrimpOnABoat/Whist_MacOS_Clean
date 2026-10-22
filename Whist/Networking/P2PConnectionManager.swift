@@ -20,6 +20,7 @@ class P2PConnectionManager: NSObject {
     private var messageQueues: [PlayerId: [String]] = [:]
     private var pendingLocalIceCandidates: [PlayerId: [RTCIceCandidate]] = [:]
     #if DEBUG
+    var simulatesNetworkLag = false
     private var debugNextSendDeadlineNs: [PlayerId: UInt64] = [:]
     #endif
     
@@ -315,28 +316,31 @@ class P2PConnectionManager: NSObject {
         for (peerId, channel) in channels {
             if channel.readyState == .open {
                 #if DEBUG
-                let scheduledDeadline: DispatchTime = stateQueue.sync {
-                    let nowNs = DispatchTime.now().uptimeNanoseconds
-                    let baseNs = max(debugNextSendDeadlineNs[peerId] ?? nowNs, nowNs)
-                    let delayNs = UInt64.random(in: 100_000_000...800_000_000)
-                    let deadlineNs = baseNs + delayNs
-                    debugNextSendDeadlineNs[peerId] = deadlineNs
-                    return DispatchTime(uptimeNanoseconds: deadlineNs)
-                }
-                DispatchQueue.global().asyncAfter(deadline: scheduledDeadline) {
-                    let sent = channel.sendData(buffer)
-                    if !sent {
-                        logger.log("Simulated lag: Failed to send message to \(peerId)")
-                        self.stateQueue.async {
-                            self.messageQueues[peerId, default: []].append(message)
-                        }
-                    } else {
+                if simulatesNetworkLag {
+                    let scheduledDeadline: DispatchTime = stateQueue.sync {
                         let nowNs = DispatchTime.now().uptimeNanoseconds
-                        let delayMs = max(0, Int((nowNs > scheduledDeadline.uptimeNanoseconds ? nowNs - scheduledDeadline.uptimeNanoseconds : 0) / 1_000_000))
-                        logger.logRTC("Simulated lag: Message sent to \(peerId) around scheduled delivery (+\(delayMs)ms jitter)")
+                        let baseNs = max(debugNextSendDeadlineNs[peerId] ?? nowNs, nowNs)
+                        let delayNs = UInt64.random(in: 100_000_000...800_000_000)
+                        let deadlineNs = baseNs + delayNs
+                        debugNextSendDeadlineNs[peerId] = deadlineNs
+                        return DispatchTime(uptimeNanoseconds: deadlineNs)
                     }
+                    DispatchQueue.global().asyncAfter(deadline: scheduledDeadline) {
+                        let sent = channel.sendData(buffer)
+                        if !sent {
+                            logger.log("Simulated lag: Failed to send message to \(peerId)")
+                            self.stateQueue.async {
+                                self.messageQueues[peerId, default: []].append(message)
+                            }
+                        } else {
+                            let nowNs = DispatchTime.now().uptimeNanoseconds
+                            let delayMs = max(0, Int((nowNs > scheduledDeadline.uptimeNanoseconds ? nowNs - scheduledDeadline.uptimeNanoseconds : 0) / 1_000_000))
+                            logger.logRTC("Simulated lag: Message sent to \(peerId) around scheduled delivery (+\(delayMs)ms jitter)")
+                        }
+                    }
+                    continue
                 }
-                #else
+                #endif
                 let sent = channel.sendData(buffer)
                 if !sent {
                     logger.log("Failed to send message to \(peerId)")
@@ -347,7 +351,6 @@ class P2PConnectionManager: NSObject {
                 } else {
                     logger.logRTC("Message sent to \(peerId) on channel \(channel)")
                 }
-                #endif
             } else {
                 logger.log("Data channel to \(peerId) not open, queueing message")
                 stateQueue.sync {

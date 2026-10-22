@@ -155,7 +155,8 @@ struct ScoreBoardView: View {
                 )
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial.opacity(0.55))
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.55)
                 )
         )
         .overlay(

@@ -265,10 +265,11 @@ extension GameState {
     }
     
     var allPlayersConnected: Bool {
-        // Only consider non-local players for connectivity
-        players
+        // Firebase carries moves and status when a direct channel is unavailable.
+        guard localPlayer != nil else { return false }
+        return players
             .filter { $0.tablePosition != .local }
-            .allSatisfy(\.isP2PConnected)
+            .allSatisfy(\.isOnline)
     }
     
     func bonusCardsNeeded(for playerId: PlayerId) -> Int {

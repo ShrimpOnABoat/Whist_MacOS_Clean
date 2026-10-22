@@ -174,7 +174,7 @@ class FirebaseSignalingManager {
         let docRef = db.collection("signaling").document(docId)
 
         do {
-            try await db.runTransaction { transaction, errorPointer -> Any? in
+            _ = try await db.runTransaction { transaction, errorPointer -> Any? in
                 do {
                     let snapshot = try transaction.getDocument(docRef)
                     guard let data = snapshot.data(),
@@ -322,7 +322,7 @@ class FirebaseSignalingManager {
     }
 
     private func queueIceCandidateString(_ candidateString: String, forDocumentId docId: String) {
-        iceSendQueue.async {
+        iceSendQueue.async { [self] in
             self.pendingIceCandidateStringsByDocId[docId, default: []].append(candidateString)
             self.iceFlushWorkItemsByDocId[docId]?.cancel()
 

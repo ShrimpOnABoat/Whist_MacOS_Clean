@@ -57,7 +57,7 @@ struct GameAction: Codable {
                 return [.choosingTrump, .waitingForTrump, .bidding, .discard]
             case .choseBet:
                 return [.choosingTrump, .waitingForTrump, .bidding, .discard]
-            case .choseTrump:
+            case .choseTrump, .cancelTrump:
                 return [.choosingTrump, .waitingForTrump, .bidding, .discard]
             case .startNewGame:
                 return [.waitingToStart]

@@ -64,7 +64,8 @@ struct GlassPanelModifier: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(GameVisualStyle.glassFill.opacity(fillOpacity))
+                    .fill(GameVisualStyle.glassFill)
+                    .opacity(fillOpacity)
                     .background(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(.ultraThinMaterial)
@@ -150,3 +151,4 @@ struct GameHoverLiftButtonStyle: ButtonStyle {
             }
     }
 }
+

@@ -54,13 +54,17 @@ class GameManager: ObservableObject {
     // MARK: - WebRTC Signaling Dependencies
     let connectionManager: P2PConnectionManager
     let signalingManager: FirebaseSignalingManager
-    var networkingStarted: Bool = false
+    var networkingStartupTask: Task<Void, Never>?
+    var networkingStarted: Bool = false {
+        didSet { updateActionSequenceObservation() }
+    }
     var connectionAttemptTimers: [PlayerId: Timer] = [:]
     var iceDisconnectionTimers: [PlayerId: Timer] = [:]
     var p2pReconnectRetryCounts: [PlayerId: Int] = [:]
+    var p2pReconnectTasks: [PlayerId: Task<Void, Never>] = [:]
     var activeP2PAttemptIds: [PlayerId: String] = [:]
     let iceDisconnectionRecoveryTimeout: TimeInterval = 10.0
-    let maxP2PReconnectAttempts: Int = 5
+    let maxP2PReconnectDelay: TimeInterval = 60
     let baseP2PReconnectDelay: TimeInterval = 1.0
     #if DEBUG
     let offerWaitTimeout: TimeInterval = 5.0 // Time to wait for an offer if I'm an answerer
@@ -74,8 +78,27 @@ class GameManager: ObservableObject {
     var lastAppliedSequence: Int = 0
     var buffered: [Int: GameAction] = [:]
     var catchUpWorkItem: DispatchWorkItem?
-    var canCatchUp: Bool = false
-    @Published var isRestoring = false
+    var canCatchUp: Bool = false {
+        didSet {
+            guard oldValue != canCatchUp else { return }
+            updateActionSequenceObservation()
+        }
+    }
+    let actionStore: GameActionStore
+    var actionSequenceObservation: GameActionObservation?
+    var actionObservationRetry: DispatchWorkItem?
+    var latestServerActionSequence = 0
+    var catchUpInProgress = false
+    var catchUpRequested = false
+    var catchUpRetryCount = 0
+    var actionSyncGeneration = UUID()
+    var localActionCommitsInFlight = 0
+    @Published var isRestoring = false {
+        didSet {
+            guard oldValue != isRestoring else { return }
+            refreshSlowpokeTimer()
+        }
+    }
     @Published var restorationProgress: Double = 0.0
     
     let preferences: Preferences
@@ -88,7 +111,7 @@ class GameManager: ObservableObject {
     var isGameSetup: Bool = false
     var isAwaitingActionCompletionDuringRestore: Bool = false
     @Published var autoPilot: Bool = false
-    @Published var autoPilotShouldWinTricks: Bool = false
+    var autoPlayInProgress: Bool = false
     #if DEBUG
     @Published var debugAutoPlayAllSteps: Bool = false
     var debugAutoPlayWorkItem: DispatchWorkItem?
@@ -141,10 +164,12 @@ class GameManager: ObservableObject {
     /// Dependency‐injecting initializer
     init(connectionManager: P2PConnectionManager,
          signalingManager: FirebaseSignalingManager,
-         preferences: Preferences) {
+         preferences: Preferences,
+         actionStore: GameActionStore = FirebaseService.shared) {
         self.connectionManager = connectionManager
         self.signalingManager = signalingManager
         self.preferences = preferences
+        self.actionStore = actionStore
         observeGameStateChanges()
     }
 
@@ -311,6 +336,7 @@ class GameManager: ObservableObject {
         amSlowPoke = false
         isSlowPoke = [:]
         autoPilot = false // Resets the autoPilot
+        autoPlayInProgress = false
         
         // Move to the next dealer in playOrder
         guard let dealer = gameState.dealer,
@@ -681,7 +707,7 @@ class GameManager: ObservableObject {
         gameState.trumpCards.last?.isFaceDown = true
         showOptions = false
 
-        logger.log("Trump choice cancelled by second player.")
+        logger.log("Trump choice cancelled.")
 
         guard let place = gameState.localPlayer?.place else { return }
 
@@ -705,64 +731,63 @@ class GameManager: ObservableObject {
     }
     
     func updateGameStateWithDiscardedCards(from playerId: PlayerId, with cards: [Card], completion: @escaping () -> Void) {
-        // Validate the player
         let player = gameState.getPlayer(by: playerId)
-        
-        // Ensure the cards are part of the player's hand
+        guard !cards.isEmpty else {
+            completion()
+            return
+        }
         for card in cards {
-            guard player.hand.firstIndex(of: card) != nil else {
+            guard player.hand.contains(card) else {
                 logger.log("Error: Card \(card) is not in \(playerId)'s hand.")
                 return
             }
-            
-            player.hasDiscarded = true
-            
-            var origin: CardPlace = player.tablePosition == .left ? .leftPlayer: .rightPlayer
-            switch player.tablePosition {
-            case .left:
-                origin = .leftPlayer
-                
-            case .right:
-                origin = .rightPlayer
-                
-            case .local:
-                origin = .localPlayer
-            
-            default:
-                logger.fatalErrorAndLog("Player \(player) has not table position!")
-            }
-            var destination: CardPlace = .deck
-            var message: String = "Player \(player) discarded \(card)"
-            
-            if player.place == 2 && gameState.round == 12 {
-                if Double(gameState.lastPlayer?.scores[safe: gameState.round - 2] ?? 0) <= 0.5 * Double(player.scores[safe: gameState.round - 2] ?? 0) || gameState.lastPlayer?.monthlyLosses ?? 0 > 0 {
-                    switch gameState.lastPlayer?.tablePosition {
-                    case .left:
-                        destination = .leftPlayer
-                        
-                    case .right:
-                        destination = .rightPlayer
-                        
-                    case .local:
-                        cards.forEach { $0.isFaceDown = false } // show the card if I'm the last player
-                        destination = .localPlayer
-                        
-                    default:
-                        destination = .table // Should crash but shouldn't happen
-                    }
-                    message = "Player \(playerId) gave \(card) to the last, \(destination) player"
+        }
+
+        let origin: CardPlace
+        switch player.tablePosition {
+        case .left: origin = .leftPlayer
+        case .right: origin = .rightPlayer
+        case .local: origin = .localPlayer
+        default: logger.fatalErrorAndLog("Player \(player) has no table position!")
+        }
+
+        var destination: CardPlace = .deck
+        if player.place == 2 && gameState.round == 12 {
+            if Double(gameState.lastPlayer?.scores[safe: gameState.round - 2] ?? 0) <= 0.5 * Double(player.scores[safe: gameState.round - 2] ?? 0) || gameState.lastPlayer?.monthlyLosses ?? 0 > 0 {
+                switch gameState.lastPlayer?.tablePosition {
+                case .left: destination = .leftPlayer
+                case .right: destination = .rightPlayer
+                case .local:
+                    cards.forEach { $0.isFaceDown = false }
+                    destination = .localPlayer
+                default: logger.fatalErrorAndLog("Last player has no table position!")
                 }
             }
-            logger.log(message)
-            beginBatchMove(totalCards: 1) {
-                if destination == .localPlayer {
-                    self.sortLocalPlayerHand()
-                }
-                completion() }
+        }
+        player.hasDiscarded = true
+
+        let afterDiscard: () -> Void = {
+            // Removing the last card of a suit can change the alternating suit order.
+            // A card received in the final round must also be sorted into the hand.
+            if origin == .localPlayer || destination == .localPlayer {
+                self.sortLocalPlayerHand()
+            }
+            completion()
+        }
+        let startedDuringRestore = isRestoring
+        if !startedDuringRestore {
+            beginBatchMove(totalCards: cards.count, completion: afterDiscard)
+        }
+        for card in cards {
+            logger.log("Player \(playerId) discarded \(card) to \(destination.rawValue)")
             moveCard(card, from: origin, to: destination)
         }
+        // Restoration moves cards synchronously; finish only after the entire discard.
+        if startedDuringRestore {
+            afterDiscard()
+        }
     }
-    
+
     func updatePlayerWithState(from playerId: PlayerId, with state: PlayerState) {
         let player = gameState.getPlayer(by: playerId)
         player.state = state
@@ -804,8 +829,32 @@ class GameManager: ObservableObject {
     }
     
     // MARK: Cancel Trump Choice
+
+    func canCancelTrumpChoice(byTapping card: Card) -> Bool {
+        guard !isRestoring,
+              gameState.round > 3,
+              let localPlayer = gameState.localPlayer,
+              let trumpSuit = gameState.trumpSuit,
+              card.rank == .two,
+              card.suit == trumpSuit,
+              gameState.trumpCards.last?.id == card.id else { return false }
+
+        if localPlayer.place == 2 {
+            return gameState.currentPhase == .discard
+        }
+
+        // With two players tied for first, nobody in second place needs to
+        // discard against this choice. The chooser can revise it until their
+        // own discard is committed.
+        return localPlayer.place == 3 &&
+            gameState.playerPlaced(2) == nil &&
+            !localPlayer.hasDiscarded &&
+            [.bidding, .discard].contains(gameState.currentPhase)
+    }
     
     func cancelTrumpChoice() {
+        guard let trumpCard = gameState.trumpCards.last,
+              canCancelTrumpChoice(byTapping: trumpCard) else { return }
         logger.log("Trump choice cancelled by local player.")
 
         sendCancelTrumpChoice(onFailed: {
@@ -828,8 +877,7 @@ class GameManager: ObservableObject {
         
         #if DEBUG
         logger.log("🚫 Skipping score save in DEBUG mode")
-        return
-        #endif
+        #else
         
         // Save the score only once
         if gameState.localPlayer?.id == .toto {
@@ -842,9 +890,12 @@ class GameManager: ObservableObject {
             let ggScore = ggPlayer.scores.last ?? 0
             let ddScore = ddPlayer.scores.last ?? 0
             let totoScore = totoPlayer.scores.last ?? 0
+
+            let scoreID = scoreIDForCurrentGame()
             
             // Create a new GameScore instance with current date, scores, and positions.
             let newScore = GameScore(
+                id: scoreID,
                 date: Date(),
                 ggScore: ggScore,
                 ddScore: ddScore,
@@ -885,6 +936,21 @@ class GameManager: ObservableObject {
                 }
             }
         }
+        #endif
+    }
+
+    /// Uses the durable start-new-game session identity as the Firestore score
+    /// document identity. Replaying a completed session after an app restart
+    /// therefore updates the same document instead of counting the game twice.
+    func scoreIDForCurrentGame() -> UUID {
+        if let currentGameSessionId,
+           let scoreID = UUID(uuidString: currentGameSessionId) {
+            return scoreID
+        }
+
+        let fallbackID = UUID()
+        logger.log("No valid game session ID was available for the final score; using fallback ID \(fallbackID).")
+        return fallbackID
     }
     
     func consecutiveWins(by playerId: PlayerId) -> Int {
@@ -1059,6 +1125,11 @@ class GameManager: ObservableObject {
                 try? await Task.sleep(nanoseconds: 50_000_000) // 50 ms
             }
             handleActionImmediately(action)
+            // The last saved action can start a deal, trick collection, or scoring.
+            // Finish that work before accepting live moves or leaving restore mode.
+            while isAwaitingActionCompletionDuringRestore {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
             actionsProcessed += 1
             restorationProgress = Double(actionsProcessed) / Double(totalActions)
         }
@@ -1070,17 +1141,23 @@ class GameManager: ObservableObject {
             }
         }
         isRestoring = false
+        sendStateToPlayers()
         logger.debug("😀😀😀 isRestoring is false.")
 
         self.objectWillChange.send()
         checkAndAdvanceStateIfNeeded()
 
+        canCatchUp = true
         logger.log("Game successfully restored via saved actions.")
         return true
     }
     
     private func handleActionImmediately(_ action: GameAction) {
         logger.log("🏓 Handling (immediate) action \(action.type) from \(action.playerId)")
+        if action.type.isDurableOrdered && shouldIgnoreOrderedAction(action) {
+            lastAppliedSequence = max(lastAppliedSequence, action.sequence)
+            return
+        }
         if self.isRestoring || self.isActionValidInCurrentPhase(action.type) {
             self.processAction(action)
             if action.type != .sendState {
@@ -1143,6 +1220,7 @@ class GameManager: ObservableObject {
         self.isSlowPoke = [:]
         self.amHonked = false
         self.autoPilot = false
+        self.autoPlayInProgress = false
         #if DEBUG
         self.debugAutoPlayAllSteps = false
         self.debugAutoPlayWorkItem?.cancel()

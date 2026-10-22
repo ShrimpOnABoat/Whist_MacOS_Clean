@@ -24,10 +24,11 @@ struct GameScore: Codable, Identifiable {
     let tournamentID: UUID?
     let tournamentName: String?
 
-    init(date: Date, ggScore: Int, ddScore: Int, totoScore: Int,
+    init(id: UUID = UUID(), date: Date, ggScore: Int, ddScore: Int, totoScore: Int,
          ggPosition: Int? = nil, ddPosition: Int? = nil, totoPosition: Int? = nil,
          ggConsecutiveWins: Int? = nil, ddConsecutiveWins: Int? = nil, totoConsecutiveWins: Int? = nil,
          tournamentID: UUID? = nil, tournamentName: String? = nil) {
+        self.id = id
         self.date = date
         self.ggScore = ggScore
         self.ddScore = ddScore
@@ -138,61 +139,34 @@ class ScoresManager {
     }
 
     func findLoser() async -> Loser? {
-        let scores = await loadScoresSafely(for: currentYear)
-        guard !scores.isEmpty else {
-            return nil
+        let now = Date()
+        let calendar = Calendar.current
+        let scores = await loadScoresSafely(for: calendar.component(.year, from: now))
+        return Self.findLoser(in: scores, asOf: now, calendar: calendar)
+    }
+
+    static func findLoser(in scores: [GameScore], asOf date: Date, calendar: Calendar = .current) -> Loser? {
+        let year = calendar.component(.year, from: date)
+        let scores = scores.filter {
+            $0.tournamentID == nil && calendar.component(.year, from: $0.date) == year
         }
-
-        let currentMonth = Calendar.current.component(.month, from: Date())
-
-        let gamePoints: (GameScore) -> [String: Int] = { game in
-            if let ggPos = game.ggPosition, let ddPos = game.ddPosition, let totoPos = game.totoPosition {
-                let positions = [("gg", ggPos), ("dd", ddPos), ("toto", totoPos)]
-                let sorted = positions.sorted { $0.1 < $1.1 }
-                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
-                points[sorted[0].0] = 2
-                points[sorted[1].0] = 1
-                return points
-            }
-
-            let scores: [(String, Int)] = [("gg", game.ggScore), ("dd", game.ddScore), ("toto", game.totoScore)]
-            let sorted = scores.sorted { $0.1 > $1.1 }
-
-            if sorted[0].1 == sorted[1].1 && sorted[1].1 == sorted[2].1 {
-                return ["gg": 2, "dd": 2, "toto": 2]
-            } else if sorted[0].1 == sorted[1].1 {
-                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
-                for entry in scores where entry.1 == sorted[0].1 {
-                    points[entry.0] = 2
-                }
-                return points
-            } else if sorted[1].1 == sorted[2].1 {
-                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
-                points[sorted[0].0] = 2
-                points[sorted[1].0] = 1
-                points[sorted[2].0] = 1
-                return points
-            } else {
-                var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
-                points[sorted[0].0] = 2
-                points[sorted[1].0] = 1
-                return points
-            }
-        }
+        guard !scores.isEmpty else { return nil }
+        let currentMonth = calendar.component(.month, from: date)
 
         let calculatePlayerPoints: ([GameScore]) -> [String: Int] = { games in
             var points: [String: Int] = ["gg": 0, "dd": 0, "toto": 0]
             for game in games {
-                for (player, value) in gamePoints(game) {
-                    points[player, default: 0] += value
-                }
+                let gamePoints = calculateGamePoints(for: game)
+                points["gg", default: 0] += gamePoints.gg
+                points["dd", default: 0] += gamePoints.dd
+                points["toto", default: 0] += gamePoints.toto
             }
             return points
         }
 
         let getGamesForMonth: (Int) -> [GameScore] = { month in
             return scores.filter {
-                let gameMonth = Calendar.current.component(.month, from: $0.date)
+                let gameMonth = calendar.component(.month, from: $0.date)
                 return gameMonth == month
             }
         }

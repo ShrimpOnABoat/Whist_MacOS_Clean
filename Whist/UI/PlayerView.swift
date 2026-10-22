@@ -426,7 +426,8 @@ struct PlayerView: View {
                                 )
                                 .background(
                                     Capsule(style: .continuous)
-                                        .fill(.ultraThinMaterial.opacity(0.55))
+                                        .fill(.ultraThinMaterial)
+                                        .opacity(0.55)
                                 )
                         )
                         .clipShape(Capsule(style: .continuous))
@@ -590,7 +591,7 @@ struct PlayerView: View {
 
 struct PlayerImageView: View {
     @EnvironmentObject var gameManager: GameManager
-    let player: Player
+    @ObservedObject var player: Player
     var dynamicSize: DynamicSize
 
     private var avatarColor: Color {
@@ -615,7 +616,7 @@ struct PlayerImageView: View {
     var body: some View {
         VStack {
             // Player Picture
-            if player.isP2PConnected || player.tablePosition == .local {
+            if player.isOnline || player.tablePosition == .local {
                 ZStack {
                     avatarBackground
                     
@@ -723,3 +724,4 @@ struct ScoreChangeView: View {
             }
     }
 }
+

@@ -113,16 +113,19 @@ struct FeltBackgroundView: View {
                 // 1. Procedural felt material: color, mottling, fiber noise, and grain.
                 ProceduralFeltMaterial(baseColorIndex: baseColorIndex)
                     .overlay(
-                        LinearGradient(
-                            colors: [
-                                GameVisualStyle.tableHighlight,
-                                Color.clear,
-                                Color.black.opacity(0.18)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .blendMode(.softLight)
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        GameVisualStyle.tableHighlight,
+                                        Color.clear,
+                                        Color.black.opacity(0.18)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .blendMode(.softLight)
                     )
                     .overlay(
                         Image("noiseTexture-4-alpha")
@@ -131,12 +134,13 @@ struct FeltBackgroundView: View {
                             .blendMode(.multiply)
                     )
                     .overlay(
-                        Color.black.opacity(0.13)
+                        Rectangle()
+                            .fill(Color(.sRGB, white: 0.0, opacity: 0.13))
                             .blendMode(.multiply)
                     )
                     .overlay(
-                        Color(red: 0.70, green: 0.20, blue: 0.18)
-                            .opacity(0.04)
+                        Rectangle()
+                            .fill(Color(.sRGB, red: 0.70, green: 0.20, blue: 0.18, opacity: 0.04))
                             .blendMode(.softLight)
                     )
 

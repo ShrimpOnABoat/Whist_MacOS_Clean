@@ -20,11 +20,11 @@ struct DealerButton: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                gradient: Gradient(colors: [
+                                colors: [
                                     Color.white.opacity(0.74),
                                     Color.white.opacity(0.34),
                                     Color.black.opacity(0.12)
-                                ]),
+                                ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )

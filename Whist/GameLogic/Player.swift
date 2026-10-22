@@ -89,6 +89,10 @@ class Player: Identifiable, ObservableObject, Codable {
         connectionPhase == .connected
     }
 
+    var isOnline: Bool {
+        firebasePresenceOnline || isP2PConnected
+    }
+
     /// The longest-from-start streak bonus currently earned by this player.
     /// Internal rounds 1...3 are the opening one-card rounds, so a player who
     /// has won the first seven rounds is still perfect when the six-card round

@@ -35,11 +35,12 @@ extension GameManager {
     // MARK: gatherCards
     
     func gatherCards(completion: @escaping () -> Void) {
+        let startedDuringRestore = isRestoring
         let totalCardsToMove = gameState.players.reduce(0) { $0 + $1.trickCards.count }
         logger.debug("beginBatchMove(\(totalCardsToMove)), activeAnimations: \(activeAnimations)")
         if totalCardsToMove > 0 {
             beginBatchMove(totalCards: totalCardsToMove) {
-                completion()
+                if !startedDuringRestore { completion() }
             }
             
             // make sure they're all face down and not playable
@@ -66,6 +67,7 @@ extension GameManager {
             if (deckCardCount != 32) || (trumpCardCount != 4) {
                 logger.fatalErrorAndLog("Some cards are missing or wrong count")
             }
+            if startedDuringRestore { completion() }
         } else {
             completion()
         }
@@ -96,8 +98,8 @@ extension GameManager {
             }
         } else {
             logger.log("Shuffle callback is not set.")
-            // we still shuffle the cards
-            self.gameState.deck.shuffle()
+            // The logical deck order must not depend on whether its view exists.
+            self.gameState.deck = newDeck
             completion()
         }
     }
@@ -301,7 +303,7 @@ extension GameManager {
     
     // MARK: playCard
     
-    func playCard(_ card: Card, completion: @escaping () -> Void) {
+    func playCard(_ card: Card, onFailed: (() -> Void)? = nil, completion: @escaping () -> Void) {
         // Ensure the local player is defined
         guard let localPlayer = gameState.localPlayer else {
             logger.fatalErrorAndLog("Error: Local player is not defined.")
@@ -315,6 +317,7 @@ extension GameManager {
         sendPlayCardtoPlayers(card, completion: completion, onFailed: {
             card.isPlayable = true
             card.playAnimationType = .normal
+            onFailed?()
             logger.log("Failed to commit played card \(card). Local state was left unchanged.")
         })
     }
@@ -565,13 +568,8 @@ extension GameManager {
             return false
         }
         
-        // If same suit, compare by rank
-        if card1.suit == card2.suit {
-            return card1.rank.precedence > card2.rank.precedence
-        }
-        
-        // If different non-trump, non-leading suits, they're equal (neither is stronger)
-        return false
+        // Compare ranks within a suit, or when choosing between off-suit cards.
+        return card1.rank.precedence > card2.rank.precedence
     }
 
     /// Find the strongest card in an array
@@ -601,12 +599,10 @@ extension GameManager {
     /// - Returns: Highest non-winning card or nil if all cards would win
     private func findHighestNonWinningCard(in playableCards: [Card], trumpSuit: Suit, leadingSuit: Suit, tableCards: [Card]) -> Card? {
         // Find the current winning card on the table
-        guard let currentWinningCard = tableCards.max(by: { card1, card2 in
-            !isCardStrongerThan(card1, card2, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
-        }) else {
+        guard let currentWinningCard = findStrongestCard(in: tableCards, trumpSuit: trumpSuit, leadingSuit: leadingSuit) else {
             // No cards on table, play the weakest card
             return playableCards.min(by: { card1, card2 in
-                isCardStrongerThan(card1, card2, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
+                isCardStrongerThan(card2, card1, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
             })
         }
         
@@ -618,7 +614,7 @@ extension GameManager {
         // If no non-winning cards, return the weakest card (will win but that's unavoidable)
         guard !nonWinningCards.isEmpty else {
             return playableCards.min(by: { card1, card2 in
-                isCardStrongerThan(card1, card2, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
+                isCardStrongerThan(card2, card1, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
             })
         }
         
@@ -628,142 +624,45 @@ extension GameManager {
 
     // MARK: AI functions
 
+    /// Choose from the current legal hand, even if animation flags have not refreshed yet.
+    func autoPlayCardChoice() -> Card? {
+        guard gameState.currentPhase == .playingTricks, isLocalPlayerTurnToPlay(),
+              let localPlayer = gameState.localPlayer else { return nil }
+
+        let hand = localPlayer.hand.filter { !$0.isPlaceholder }
+        let leadingSuit = gameState.table.first?.suit
+        let followingSuit = hand.filter { $0.suit == leadingSuit }
+        let playableCards = followingSuit.isEmpty ? hand : followingSuit
+        guard let trumpSuit = gameState.trumpSuit else { return playableCards.first }
+
+        if autoPilotShouldWinTricks {
+            return findStrongestCard(in: playableCards, trumpSuit: trumpSuit, leadingSuit: leadingSuit ?? trumpSuit)
+        }
+        return findHighestNonWinningCard(in: playableCards, trumpSuit: trumpSuit,
+                                         leadingSuit: leadingSuit ?? trumpSuit, tableCards: gameState.table)
+    }
+
     func AIPlayCard(completion: @escaping () -> Void) {
-        // Ensure the local player is defined
-        guard let localPlayer = gameState.localPlayer else {
-            logger.fatalErrorAndLog("Error: Local player is not defined.")
-        }
-        
-        guard let localIndex = gameState.playOrder.firstIndex(of: localPlayer.id) else {
-            logger.fatalErrorAndLog("Error: Local player index is not defined.")
-        }
-        
-        if !gameState.table.indices.contains(localIndex) {
-            // Filter playable cards
-            var playableCards = localPlayer.hand.filter { $0.isPlayable }
-            
-            // If none are playable, try to recover by recomputing playability after animations settle.
-            if playableCards.isEmpty {
-                // If the hand is empty, nothing to play; just return safely.
-                if localPlayer.hand.isEmpty {
-                    logger.log("AI: No cards in hand to play. Returning without action.")
-                    completion()
-                    return
-                }
-                
-                logger.log("AI: No playable cards flagged. Waiting for animations, recomputing playability, and retrying once.")
-                waitForAnimationsToFinish { [weak self] in
-                    guard let self = self else { return }
-                    // Recompute playability based on the current lead
-                    self.setPlayableCards()
-                    playableCards = localPlayer.hand.filter { $0.isPlayable }
-                    
-                    // If still empty, fall back to computing legal moves directly from rules
-                    if playableCards.isEmpty {
-                        let leadingSuit = self.gameState.table.first?.suit
-                        if let lead = leadingSuit, localPlayer.hand.contains(where: { $0.suit == lead }) {
-                            playableCards = localPlayer.hand.filter { $0.suit == lead }
-                        } else {
-                            playableCards = localPlayer.hand
-                        }
-                        
-                        if playableCards.isEmpty {
-                            // This should never happen, but avoid crashing.
-                            logger.log("AI: Still no card available after recompute. Returning without action.")
-                            completion()
-                            return
-                        }
-                    }
-                    
-                    // Proceed to pick and play using smart logic
-                    let selectedCard: Card?
-                    
-                    // Get current game state for card selection
-                    guard let trumpSuit = self.gameState.trumpSuit else {
-                        logger.log("AI (retry): No trump suit defined, playing random card")
-                        selectedCard = playableCards.randomElement()
-                        return
-                    }
-                    
-                    let leadingSuit = self.gameState.table.first?.suit ?? trumpSuit
-                    let tableCards = self.gameState.table
-                    
-                    if self.autoPilotShouldWinTricks {
-                        // Play the strongest card to win the trick
-                        selectedCard = self.findStrongestCard(in: playableCards, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
-                        logger.log("AI (retry, win mode) is playing strongest card: \(selectedCard.map({ String(describing: $0) }) ?? "nil")")
-                    } else {
-                        // Play the highest card that won't win the trick
-                        selectedCard = self.findHighestNonWinningCard(in: playableCards, trumpSuit: trumpSuit, leadingSuit: leadingSuit, tableCards: tableCards)
-                        logger.log("AI (retry, lose mode) is playing highest non-winning card: \(selectedCard.map({ String(describing: $0) }) ?? "nil")")
-                    }
-                    
-                    if let selectedCard = selectedCard {
-                        self.playCard(selectedCard) {
-                            logger.log("AI (retry) played card \(selectedCard)")
-                            completion()
-                        }
-                    } else {
-                        logger.log("AI (retry): Could not select a card using smart logic, falling back to random")
-                        if let fallbackCard = playableCards.randomElement() {
-                            self.playCard(fallbackCard) {
-                                logger.log("AI (retry) played fallback card \(fallbackCard)")
-                                completion()
-                            }
-                        } else {
-                            logger.log("AI: Failed to select a card after retry. Returning without action.")
-                            completion()
-                        }
-                    }
-                }
+        guard !isRestoring, gameState.currentPhase == .playingTricks,
+              isLocalPlayerTurnToPlay(), !autoPlayInProgress else { return }
+        autoPlayInProgress = true
+
+        waitForAnimationsToFinish { [weak self] in
+            guard let self else { return }
+            guard !self.isRestoring, let selectedCard = self.autoPlayCardChoice() else {
+                self.autoPlayInProgress = false
                 return
             }
-            
-            // Select the best playable card based on autoPilotShouldWinTricks setting
-            let selectedCard: Card?
-            
-            // Get current game state for card selection
-            guard let trumpSuit = gameState.trumpSuit else {
-                logger.log("AI: No trump suit defined, playing random card")
-                selectedCard = playableCards.randomElement()
-                return
-            }
-            
-            let leadingSuit = gameState.table.first?.suit ?? trumpSuit
-            let tableCards = gameState.table
-            
-            if autoPilotShouldWinTricks {
-                // Play the strongest card to win the trick
-                selectedCard = findStrongestCard(in: playableCards, trumpSuit: trumpSuit, leadingSuit: leadingSuit)
-                logger.log("AI (win mode) is playing strongest card: \(selectedCard.map({ String(describing: $0) }) ?? "nil")")
-            } else {
-                // Play the highest card that won't win the trick
-                selectedCard = findHighestNonWinningCard(in: playableCards, trumpSuit: trumpSuit, leadingSuit: leadingSuit, tableCards: tableCards)
-                logger.log("AI (lose mode) is playing highest non-winning card: \(selectedCard.map({ String(describing: $0) }) ?? "nil")")
-            }
-            
-            // Play the selected card
-            if let selectedCard = selectedCard {
-                playCard(selectedCard) {
-                    logger.log("AI played card \(selectedCard)")
-                    completion()
-                }
-            } else {
-                // Fallback to random if something went wrong
-                logger.log("AI: Could not select a card using smart logic, falling back to random")
-                if let fallbackCard = playableCards.randomElement() {
-                    playCard(fallbackCard) {
-                        logger.log("AI played fallback card \(fallbackCard)")
-                        completion()
-                    }
-                } else {
-                    logger.log("AI: Could not select any playable card. Returning.")
-                    completion()
-                }
+            self.playCard(selectedCard, onFailed: {
+                self.autoPlayInProgress = false
+            }) {
+                self.autoPlayInProgress = false
+                logger.log("AI played card \(selectedCard)")
+                completion()
             }
         }
     }
-    
+
     func AIChooseTrumpSuit(completion: @escaping () -> Void) {
         if gameState.trumpSuit == nil && !gameState.table.isEmpty {
             selectTrumpSuit(gameState.table.randomElement()!) {
@@ -886,4 +785,3 @@ extension GameManager {
         }
     }
 }
-

@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import WebRTC
 import FirebaseFirestore
+import FirebaseAuth
 
 extension GameManager {
     private func shouldOffer(from localPlayerId: PlayerId, to peerId: PlayerId) -> Bool {
@@ -25,6 +26,7 @@ extension GameManager {
     @MainActor
     private func resetReconnectRetries(for peerId: PlayerId) {
         p2pReconnectRetryCounts[peerId] = 0
+        p2pReconnectTasks.removeValue(forKey: peerId)?.cancel()
     }
 
     @MainActor
@@ -63,28 +65,28 @@ extension GameManager {
     }
 
     @MainActor
-    private func scheduleReconnectAttempt(for peerId: PlayerId, reason: String, fallbackPhase: P2PConnectionPhase) {
+    func scheduleReconnectAttempt(for peerId: PlayerId, reason: String, fallbackPhase: P2PConnectionPhase) {
         guard let player = gameState.players.first(where: { $0.id == peerId }), player.firebasePresenceOnline else {
             logger.logRTC("GM: \(reason) - Peer \(peerId.rawValue) is offline. Skipping reconnect.")
             updatePlayerConnectionPhase(playerId: peerId, phase: fallbackPhase)
             return
         }
 
-        let attempt = (p2pReconnectRetryCounts[peerId] ?? 0) + 1
-        guard attempt <= maxP2PReconnectAttempts else {
-            logger.logRTC("GM: \(reason) - Reached max reconnect attempts for \(peerId.rawValue).")
-            updatePlayerConnectionPhase(playerId: peerId, phase: .failed)
-            return
-        }
+        guard player.connectionPhase != .connected, p2pReconnectTasks[peerId] == nil else { return }
+        // Keep trying slowly after a prolonged outage, with only one retry per peer.
+        let attempt = min((p2pReconnectRetryCounts[peerId] ?? 0) + 1, 7)
 
         p2pReconnectRetryCounts[peerId] = attempt
-        let delay = baseP2PReconnectDelay * pow(2.0, Double(attempt - 1))
-        logger.logRTC("GM: \(reason) - Scheduling reconnect attempt \(attempt)/\(maxP2PReconnectAttempts) for \(peerId.rawValue) in \(delay)s.")
+        let delay = min(baseP2PReconnectDelay * pow(2.0, Double(attempt - 1)), maxP2PReconnectDelay)
+        logger.logRTC("GM: \(reason) - Scheduling reconnect attempt \(attempt) for \(peerId.rawValue) in \(delay)s.")
 
-        Task {
+        p2pReconnectTasks[peerId] = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.p2pReconnectTasks.removeValue(forKey: peerId)
                 await MainActor.run {
+                    guard self.gameState.getPlayer(by: peerId).connectionPhase != .connected else { return }
                     guard self.gameState.getPlayer(by: peerId).firebasePresenceOnline else {
                         logger.logRTC("GM: \(reason) - Peer \(peerId.rawValue) went offline before retry.")
                         self.updatePlayerConnectionPhase(playerId: peerId, phase: fallbackPhase)
@@ -126,20 +128,42 @@ extension GameManager {
     
     // MARK: - Signaling Setup
     
-    func startNetworkingIfNeeded() {
-        guard !preferences.playerId.isEmpty else {
-            print("🚫 Cannot start networking: playerId is empty.")
+    func startNetworkingIfNeeded(authenticate: @escaping () async throws -> Void = {
+        _ = try await Auth.auth().signInAnonymously()
+    }) {
+        guard let localPlayerIdEnum = PlayerId(rawValue: preferences.playerId) else {
+            logger.log("Cannot start networking without a valid player identity.")
             return
         }
-        
-        guard !networkingStarted else {
-            return
-        }
-        
-        Task {
-            networkingStarted = true
-            
-            let localPlayerIdEnum = PlayerId(rawValue: preferences.playerId)!
+        guard !networkingStarted, networkingStartupTask == nil else { return }
+
+        // Reserve startup synchronously: view appearance and activation can both
+        // arrive before the task starts. Firebase listeners must wait for auth.
+        networkingStartupTask = Task { [self] in
+            defer {
+                networkingStartupTask = nil
+                if preferences.playerId != localPlayerIdEnum.rawValue {
+                    startNetworkingIfNeeded()
+                }
+            }
+            var retryDelay: UInt64 = 1
+            while !Task.isCancelled {
+                do {
+                    try await authenticate()
+                    break
+                } catch {
+                    logger.log("Firebase sign-in failed: \(error.localizedDescription). Retrying automatically.")
+                    do {
+                        try await Task.sleep(nanoseconds: retryDelay * 1_000_000_000)
+                    } catch { return }
+                    retryDelay = min(retryDelay * 2, 30)
+                }
+            }
+            guard !Task.isCancelled else { return }
+            guard preferences.playerId == localPlayerIdEnum.rawValue else {
+                // The identity picker may have changed while signing in.
+                return
+            }
             let otherPlayerIds = PlayerId.allCases.filter { $0 != localPlayerIdEnum }
 
             // Important startup order:
@@ -149,9 +173,10 @@ extension GameManager {
             // This avoids a race where presence triggers a new offer that gets
             // deleted by startup cleanup.
             await clearSignalingDataIfNeeded()
+            guard !Task.isCancelled, preferences.playerId == localPlayerIdEnum.rawValue else { return }
 
             // Inject validation logic into signaling manager
-            signalingManager.validateSession = { [weak self] (peerId, incomingSessionId) in
+            signalingManager.validateSession = { [weak self = self] (peerId, incomingSessionId) in
                 guard self != nil else { return false }
                 guard let expectedSessionId = PresenceManager.shared.getSessionId(for: peerId) else {
                     logger.log("⚠️ Validating Session for \(peerId): Unknown expected session. Allowing (will be reconciled by presence).")
@@ -175,13 +200,13 @@ extension GameManager {
             }
 
             // Assign FSM callbacks
-            signalingManager.onOfferReceived = { [weak self] (fromId, sdp, attemptId) in
+            signalingManager.onOfferReceived = { [weak self = self] (fromId, sdp, attemptId) in
                 self?.handleReceivedOffer(from: fromId, sdp: sdp, attemptId: attemptId)
             }
-            signalingManager.onAnswerReceived = { [weak self] (fromId, sdp, attemptId) in
+            signalingManager.onAnswerReceived = { [weak self = self] (fromId, sdp, attemptId) in
                 self?.handleReceivedAnswer(from: fromId, sdp: sdp, attemptId: attemptId)
             }
-            signalingManager.onRemoteIceCandidateReceived = { [weak self] (fromId, candidate, attemptId) in
+            signalingManager.onRemoteIceCandidateReceived = { [weak self = self] (fromId, candidate, attemptId) in
                 self?.handleReceivedRemoteIceCandidate(from: fromId, candidate: candidate, attemptId: attemptId)
             }
             
@@ -189,11 +214,17 @@ extension GameManager {
             signalingManager.setupFirebaseListeners(localPlayerId: localPlayerIdEnum)
 
             // Presence is started after startup cleanup + listener wiring.
-            PresenceManager.shared.onPeerPresenceChanged = { [weak self] (changedPeerId, isOnline) in
+            PresenceManager.shared.onPeerPresenceChanged = { [weak self = self] (changedPeerId, isOnline) in
                 self?.handlePeerPresenceChange(peerId: changedPeerId, isOnline: isOnline)
             }
+            PresenceManager.shared.onPeerStateChanged = { [weak self] peerId, state in
+                self?.updatePlayerWithState(from: peerId, with: state)
+            }
+            PresenceManager.shared.configure(with: localPlayerIdEnum.rawValue)
             PresenceManager.shared.startMonitoringPeerPresence(for: otherPlayerIds, localPlayerId: localPlayerIdEnum)
 
+            networkingStarted = true
+            sendStateToPlayers()
             setupSignaling()
         }
     }
@@ -301,15 +332,18 @@ extension GameManager {
             self.resetReconnectRetries(for: peerId)
             self.cancelConnectionTimer(for: peerId)
             self.updatePlayerConnectionPhase(playerId: peerId, phase: .connected)
+            self.sendStateToPlayers()
             
             // Catchup in case actions were sent while we were offline
-            self.scheduleCatchUp(reason: "P2P connection established with \(peerId.rawValue)")
+            self.scheduleCatchUp(reason: "P2P connection established with \(peerId.rawValue)", force: true)
         }
         
         connectionManager.onMessageReceived = { [weak self] (peerId, message) in
-            guard let self = self else { return }
-            logger.log("📩 P2P Message received from \(peerId.rawValue)")
-            self.decodeAndProcessAction(from: peerId, message: message)
+            Task { @MainActor in
+                guard let self else { return }
+                logger.log("📩 P2P Message received from \(peerId.rawValue)")
+                self.decodeAndProcessAction(from: peerId, message: message)
+            }
         }
         
         connectionManager.onError = { [weak self] (peerId, error) in
@@ -342,7 +376,7 @@ extension GameManager {
                     }
                     
                     // Catchup in case actions were sent while we were offline
-                    self.scheduleCatchUp(reason: "ICE \(newState.rawValue) for \(peerId.rawValue)")
+                    self.scheduleCatchUp(reason: "ICE \(newState.rawValue) for \(peerId.rawValue)", force: true)
 
                 case .disconnected:
                     // ICE connection is temporarily lost. Try to recover.
@@ -404,7 +438,10 @@ extension GameManager {
     
     // Helper to update phase and trigger UI refresh
     @MainActor
-    private func updatePlayerConnectionPhase(playerId: PlayerId, phase: P2PConnectionPhase) {
+    func updatePlayerConnectionPhase(playerId: PlayerId, phase: P2PConnectionPhase) {
+        if phase == .connected {
+            resetReconnectRetries(for: playerId)
+        }
         guard let playerIndex = gameState.players.firstIndex(where: { $0.id == playerId }) else {
             logger.log("Error: Player \(playerId) not found to update connection phase.")
             return
@@ -597,7 +634,7 @@ extension GameManager {
         // Update phase: we are now going to answer
         self.updatePlayerConnectionPhase(playerId: peerId, phase: .answering)
         
-        Task { // Perform async WebRTC operations
+        Task { [self] in // Perform async WebRTC operations
             
             // Create answer
             self.connectionManager.createAnswer(to: peerId, from: sdp) { [weak self] answeredPeerId, result in
@@ -783,6 +820,9 @@ extension GameManager {
         }
         
         displayPlayers()
+        if gameState.currentPhase == .waitingForPlayers {
+            checkAndAdvanceStateIfNeeded()
+        }
     }
     
     @MainActor
@@ -806,7 +846,7 @@ extension GameManager {
             logger.debug("\(localPlayerId.rawValue) is designated offerer to \(peerId.rawValue). Creating an offer...")
             self.updatePlayerConnectionPhase(playerId: peerId, phase: .offering)
 
-            Task {
+            Task { [self] in
                 do {
                     try await self.signalingManager.clearSignalingDocuments(between: localPlayerId, and: peerId)
                 } catch {
@@ -927,19 +967,4 @@ extension GameManager {
         }
     }
     
-    //MARK: CatchUp
-    func scheduleCatchUp(reason: String) {
-        guard canCatchUp else {
-            logger.debug("Cannot catch up now.")
-            return
-        }
-        catchUpWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            logger.log("🔄 Catch-up triggered (\(reason)). From seq \(self.lastAppliedSequence + 1)")
-            self.requestCatchUp(from: self.lastAppliedSequence + 1)
-        }
-        catchUpWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
-    }
 }

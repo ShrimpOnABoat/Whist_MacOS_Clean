@@ -158,7 +158,8 @@ struct GameResultView: View {
                                 )
                                 .background(
                                     Capsule(style: .continuous)
-                                        .fill(.ultraThinMaterial.opacity(0.24))
+                                        .fill(.ultraThinMaterial)
+                                        .opacity(0.24)
                                 )
                         )
                         .clipShape(Capsule(style: .continuous))
@@ -284,7 +285,8 @@ struct GameResultView: View {
                     .fill(Color.white.opacity(0.06))
                     .background(
                         Capsule(style: .continuous)
-                            .fill(.ultraThinMaterial.opacity(0.20))
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.20)
                     )
             )
             .overlay(
@@ -411,7 +413,8 @@ struct GameResultView: View {
                 .fill(Color.white.opacity(0.04))
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(.ultraThinMaterial.opacity(0.08))
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.08)
                 )
         )
         .overlay(
