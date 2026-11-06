@@ -15,7 +15,6 @@ struct PlayerView: View {
     let dynamicSize: DynamicSize
     let isDealer: Bool
     
-    @State private var dealerFrame: CGRect = .zero
     @State private var selectedCardIDs: Set<String> = []
     @State private var scoreChange: Int? = nil
     @State private var isBlinking = false
@@ -95,19 +94,7 @@ struct PlayerView: View {
                 if isDealer {
                     HStack {
                         Spacer()
-                        Circle()
-                            .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
-                            .opacity(0)
-                            .overlay(
-                                GeometryReader { proxy in
-                                    Color.clear
-                                        .onAppear {
-                                            let frame = proxy.frame(in: .named("contentArea"))
-                                            logger.log("Captured frame: \(frame)")
-                                            gameManager.updateDealerFrame(playerId: player.id, frame: frame)
-                                        }
-                                }
-                            )
+                        dealerPlaceholder
                     }
                 }
             }
@@ -144,16 +131,7 @@ struct PlayerView: View {
                             // Dealer button overlay
                             VStack {
                                 if isDealer {
-                                    Circle()
-                                        .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
-                                        .opacity(0)
-                                        .background(GeometryReader { proxy in
-                                            Color.clear
-                                                .onAppear {
-                                                    let frame = proxy.frame(in: .named("contentArea"))
-                                                    gameManager.updateDealerFrame(playerId: player.id, frame: frame)
-                                                }
-                                        })
+                                    dealerPlaceholder
                                 }
                             }
                             .frame(maxHeight: .infinity, alignment: .top)
@@ -185,16 +163,7 @@ struct PlayerView: View {
                             // Dealer button overlay
                             VStack {
                                 if isDealer {
-                                    Circle()
-                                        .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
-                                        .opacity(0)
-                                        .background(GeometryReader { proxy in
-                                            Color.clear
-                                                .onAppear {
-                                                    let frame = proxy.frame(in: .named("contentArea"))
-                                                    gameManager.updateDealerFrame(playerId: player.id, frame: frame)
-                                                }
-                                        })
+                                    dealerPlaceholder
                                 }
                             }
                             .frame(maxHeight: .infinity, alignment: .top)
@@ -213,6 +182,23 @@ struct PlayerView: View {
             }
     }
     
+    private var dealerPlaceholder: some View {
+        Color.clear
+            .frame(width: dynamicSize.dealerButtonSize, height: dynamicSize.dealerButtonSize)
+            .background(
+                GeometryReader { proxy in
+                    let frame = proxy.frame(in: .named("contentArea"))
+                    Color.clear
+                        .onAppear {
+                            gameManager.updateDealerFrame(playerId: player.id, frame: frame)
+                        }
+                        .onChange(of: frame) { newFrame in
+                            gameManager.updateDealerFrame(playerId: player.id, frame: newFrame)
+                        }
+                }
+            )
+    }
+
     // MARK: - Player Info
     @ViewBuilder
     private func PlayerInfo(dynamicSize: DynamicSize) -> some View {
@@ -612,36 +598,53 @@ struct PlayerImageView: View {
         player.state == .discarding ||
         player.state == .choosingTrump
     }
+
+    private var isDisconnected: Bool {
+        !player.isOnline && player.tablePosition != .local
+    }
+
+    private var championYear: Int? {
+        guard let champion = gameManager.annualChampion,
+              champion.playerId == player.id else { return nil }
+        return champion.year
+    }
     
     var body: some View {
         VStack {
             // Player Picture
-            if player.isOnline || player.tablePosition == .local {
-                ZStack {
-                    avatarBackground
-                    
-                    (player.image ?? Image(systemName: "person.crop.circle"))
-                        .resizable()
-                        .scaledToFit()
+            Group {
+                if !isDisconnected {
+                    ZStack {
+                        avatarBackground
+
+                        (player.image ?? Image(systemName: "person.crop.circle"))
+                            .resizable()
+                            .scaledToFit()
+                    }
+                    .frame(width: dynamicSize.playerImageWidth, height: dynamicSize.playerImageHeight)
+                    .clipShape(Circle())
+                    .overlay(avatarInnerStroke(opacity: 0.9))
+                    .overlay(actionRing)
+                    .shadow(color: Color.black.opacity(0.28), radius: 11, x: 0, y: 6)
+                } else {
+                    ZStack {
+                        avatarBackground
+                        (player.image ?? Image(systemName: "person.crop.circle"))
+                            .resizable()
+                            .scaledToFit()
+                    }
+                    .frame(width: dynamicSize.playerImageWidth, height: dynamicSize.playerImageHeight)
+                    .clipShape(Circle())
+                    .overlay(avatarInnerStroke(opacity: 0.72))
+                    .shadow(color: Color.black.opacity(0.22), radius: 9, x: 0, y: 5)
                 }
-                .frame(width: dynamicSize.playerImageWidth, height: dynamicSize.playerImageHeight)
-                .clipShape(Circle())
-                .overlay(avatarInnerStroke(opacity: 0.9))
-                .overlay(actionRing)
-                .shadow(color: Color.black.opacity(0.28), radius: 11, x: 0, y: 6)
-            } else {
-                ZStack {
-                    avatarBackground
-                    (player.image ?? Image(systemName: "person.crop.circle"))
-                        .resizable()
-                        .scaledToFit()
-                }
-                .frame(width: dynamicSize.playerImageWidth, height: dynamicSize.playerImageHeight)
-                .clipShape(Circle())
-                .overlay(avatarInnerStroke(opacity: 0.72))
-                .shadow(color: Color.black.opacity(0.22), radius: 9, x: 0, y: 5)
-                .grayscale(1.0)
             }
+            .overlay {
+                if let year = championYear {
+                    AnnualChampionLaurel(year: year, avatarSize: dynamicSize.playerImageWidth)
+                }
+            }
+            .grayscale(isDisconnected ? 1 : 0)
             
             // Player Username
             Text(player.username)
@@ -696,6 +699,165 @@ struct PlayerImageView: View {
             .strokeBorder(isActionRequired ? avatarColor : Color.clear, lineWidth: 3)
             .padding(-3)
             .shadow(color: isActionRequired ? avatarColor.opacity(0.46) : Color.clear, radius: 8, x: 0, y: 0)
+    }
+}
+
+private struct AnnualChampionLaurel: View {
+    let year: Int
+    let avatarSize: CGFloat
+
+    private let antiqueGold = Color(red: 0.44, green: 0.31, blue: 0.12)
+    private let gold = Color(red: 0.78, green: 0.64, blue: 0.36)
+    private let highlight = Color(red: 0.97, green: 0.89, blue: 0.66)
+
+    var body: some View {
+        Canvas { context, size in
+            let geometry = InsetLaurelShape().geometry(in: CGRect(origin: .zero, size: size))
+            let diameter = min(size.width, size.height)
+            context.fill(geometry.stems, with: .linearGradient(
+                Gradient(colors: [highlight, gold, antiqueGold]),
+                startPoint: CGPoint(x: size.width / 2, y: size.height * 0.76),
+                endPoint: CGPoint(x: size.width / 2, y: size.height * 0.94)
+            ))
+
+            for leaf in geometry.leaves {
+                context.fill(leaf.outline, with: .linearGradient(
+                    Gradient(stops: [
+                        .init(color: antiqueGold, location: 0),
+                        .init(color: gold, location: 0.24),
+                        .init(color: highlight, location: 0.52),
+                        .init(color: gold, location: 0.76),
+                        .init(color: antiqueGold, location: 1)
+                    ]),
+                    startPoint: leaf.shadeStart, endPoint: leaf.shadeEnd
+                ))
+                context.fill(leaf.fold, with: .color(antiqueGold.opacity(0.22)))
+                context.stroke(leaf.outline, with: .color(highlight.opacity(0.65)),
+                               lineWidth: diameter * 0.0025)
+                context.stroke(leaf.veinlets, with: .color(antiqueGold.opacity(0.8)),
+                               style: StrokeStyle(lineWidth: diameter * 0.0025, lineCap: .round))
+                context.stroke(leaf.vein, with: .color(highlight.opacity(0.85)),
+                               style: StrokeStyle(lineWidth: diameter * 0.004, lineCap: .round))
+            }
+        }
+            .frame(width: avatarSize, height: avatarSize)
+            .shadow(color: .black.opacity(0.65), radius: 0.5, x: 0, y: 0.5)
+            .contentShape(Circle())
+            .help("Champion \(String(year)) — titre à défendre.")
+            .accessibilityLabel("Champion \(String(year)), tenant du titre")
+    }
+}
+
+private struct InsetLaurelShape: Shape {
+    struct Leaf {
+        let outline: Path
+        let fold: Path
+        let vein: Path
+        let veinlets: Path
+        let shadeStart: CGPoint
+        let shadeEnd: CGPoint
+    }
+
+    struct Geometry {
+        var stems = Path()
+        var leaves: [Leaf] = []
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let geometry = geometry(in: rect)
+        var outline = geometry.stems
+        for leaf in geometry.leaves {
+            outline.addPath(leaf.outline)
+        }
+        return outline
+    }
+
+    func geometry(in rect: CGRect) -> Geometry {
+        let diameter = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = diameter * 0.405
+        var geometry = Geometry()
+
+        for side in [CGFloat(-1), CGFloat(1)] {
+            // Each sprig follows one eighth of the circle, starting at the bottom.
+            func point(at progress: CGFloat) -> CGPoint {
+                let angle = progress * .pi / 4
+                return CGPoint(x: center.x + side * sin(angle) * radius,
+                               y: center.y + cos(angle) * radius)
+            }
+
+            var stem = Path()
+            // Slightly crossed stems give the two sprigs a natural binding at the base.
+            stem.move(to: CGPoint(x: center.x - side * diameter * 0.025,
+                                 y: center.y + radius + diameter * 0.012))
+            stem.addQuadCurve(to: point(at: 0.1), control: point(at: 0))
+            for step in 1...16 {
+                stem.addLine(to: point(at: 0.1 + CGFloat(step) / 16 * 0.9))
+            }
+            geometry.stems.addPath(stem.strokedPath(StrokeStyle(lineWidth: diameter * 0.008, lineCap: .round)))
+
+            let leafLengths: [CGFloat] = [0.074, 0.08, 0.076, 0.066]
+            for (index, progress) in [CGFloat(0.15), 0.35, 0.55, 0.75].enumerated() {
+
+                for leafSide in [CGFloat(-1), CGFloat(1)] {
+                    // Stagger the leaves and vary their size instead of repeating identical pairs.
+                    let attachment = progress + (leafSide > 0 ? 0.035 : 0)
+                    let angle = attachment * .pi / 4
+                    let tangent = CGVector(dx: side * cos(angle), dy: -sin(angle))
+                    let outward = CGVector(dx: side * sin(angle), dy: cos(angle))
+                    let direction = CGVector(dx: tangent.dx * 0.76 + leafSide * outward.dx * 0.65,
+                                             dy: tangent.dy * 0.76 + leafSide * outward.dy * 0.65)
+                    geometry.leaves.append(leaf(from: point(at: attachment), direction: direction,
+                                               length: diameter * leafLengths[index],
+                                               width: diameter * 0.043, bend: side * leafSide))
+                }
+            }
+
+            let tipAngle = CGFloat.pi / 4 * 0.88
+            geometry.leaves.append(leaf(from: point(at: 0.88),
+                                       direction: CGVector(dx: side * cos(tipAngle), dy: -sin(tipAngle)),
+                                       length: diameter * 0.048, width: diameter * 0.032, bend: side))
+        }
+        return geometry
+    }
+
+    private func leaf(from base: CGPoint, direction: CGVector, length: CGFloat,
+                      width: CGFloat, bend: CGFloat) -> Leaf {
+        let magnitude = hypot(direction.dx, direction.dy)
+        let axis = CGVector(dx: direction.dx / magnitude, dy: direction.dy / magnitude)
+        let normal = CGVector(dx: -axis.dy, dy: axis.dx)
+        func point(_ progress: CGFloat, offset: CGFloat = 0) -> CGPoint {
+            let curve = sin(progress * .pi) * length * 0.09 * bend
+            return CGPoint(x: base.x + axis.dx * length * progress + normal.dx * (curve + offset),
+                           y: base.y + axis.dy * length * progress + normal.dy * (curve + offset))
+        }
+
+        let tip = point(1)
+        var outline = Path()
+        outline.move(to: base)
+        outline.addCurve(to: tip, control1: point(0.25, offset: width * 0.7),
+                         control2: point(0.72, offset: width * 0.4))
+        var fold = outline
+        fold.addQuadCurve(to: base, control: point(0.5))
+        fold.closeSubpath()
+        outline.addCurve(to: base, control1: point(0.68, offset: -width * 0.47),
+                         control2: point(0.23, offset: -width * 0.52))
+        outline.closeSubpath()
+
+        var vein = Path()
+        vein.move(to: base)
+        vein.addQuadCurve(to: tip, control: point(0.5))
+        var veinlets = Path()
+        for progress in [CGFloat(0.34), 0.57] {
+            for side in [CGFloat(-1), CGFloat(1)] {
+                veinlets.move(to: point(progress))
+                veinlets.addQuadCurve(to: point(progress + 0.15, offset: side * width * 0.22),
+                                     control: point(progress + 0.07, offset: side * width * 0.12))
+            }
+        }
+        return Leaf(outline: outline, fold: fold, vein: vein, veinlets: veinlets,
+                    shadeStart: point(0.5, offset: -width * 0.6),
+                    shadeEnd: point(0.5, offset: width * 0.6))
     }
 }
 

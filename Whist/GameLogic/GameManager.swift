@@ -119,6 +119,9 @@ class GameManager: ObservableObject {
     #endif
     
     var lastGameWinner: PlayerId?
+    @Published private(set) var annualChampion: AnnualChampion?
+    private var loadedAnnualChampionYear: Int?
+    private var loadingAnnualChampionYear: Int?
     var showConfetti: Bool = false
     @Published var showWindSwirl: Bool = false
     @Published var showFailureEffect: Bool = false
@@ -171,6 +174,32 @@ class GameManager: ObservableObject {
         self.preferences = preferences
         self.actionStore = actionStore
         observeGameStateChanges()
+    }
+
+    func refreshAnnualChampion() async {
+        let year = Calendar.current.component(.year, from: Date()) - 1
+        guard loadedAnnualChampionYear != year, loadingAnnualChampionYear != year else { return }
+
+        // An old title must not remain visible when the calendar year changes.
+        if annualChampion?.year != year {
+            annualChampion = nil
+        }
+        loadingAnnualChampionYear = year
+        defer {
+            if loadingAnnualChampionYear == year {
+                loadingAnnualChampionYear = nil
+            }
+        }
+
+        do {
+            let scores = try await Self.SM.loadScores(for: year)
+            guard !Task.isCancelled, loadingAnnualChampionYear == year else { return }
+            annualChampion = AnnualChampion(year: year, scores: scores)
+            loadedAnnualChampionYear = year
+        } catch {
+            // Leave the year uncached so a later activation can retry.
+            logger.log("Could not load the annual champion for \(year): \(error.localizedDescription)")
+        }
     }
 
     private func observeGameStateChanges() {

@@ -26,10 +26,16 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            await gameManager.refreshAnnualChampion()
+        }
         // Start P2P networking when view appears or playerId changes
         .onAppear {
             identifyAndUpdateLocalPlayer()
             gameManager.startNetworkingIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            Task { await gameManager.refreshAnnualChampion() }
         }
         .onChange(of: preferences.playerId) { _ in
             identifyAndUpdateLocalPlayer()
@@ -40,6 +46,7 @@ struct ContentView: View {
             logger.log("ContentView: App reactivated, reinitializing networking...")
             identifyAndUpdateLocalPlayer()
             gameManager.startNetworkingIfNeeded()
+            Task { await gameManager.refreshAnnualChampion() }
         }
     }
     // Helper function to avoid code duplication
@@ -61,3 +68,4 @@ struct ContentView: View {
         gameManager.updateLocalPlayer(localId, name: localId.rawValue, image: placeholderImage)
     }
 }
+

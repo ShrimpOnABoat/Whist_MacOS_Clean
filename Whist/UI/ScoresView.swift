@@ -111,6 +111,28 @@ struct AnnualScoreSummary {
     var hasPerfectGameBonuses: Bool {
         perfectGameBonuses.gg > 0 || perfectGameBonuses.dd > 0 || perfectGameBonuses.toto > 0
     }
+
+    // Share the same yearly ranking between the podium and the champion's avatar.
+    var rankedPlayers: [PlayerId] {
+        let totals = total
+        let candidates: [(id: PlayerId, tally: Int, points: Int)] = [
+            (.gg, totals.ggTally, totals.gg),
+            (.dd, totals.ddTally, totals.dd),
+            (.toto, totals.totoTally, totals.toto)
+        ]
+
+        return candidates
+            .sorted {
+                if $0.tally != $1.tally { return $0.tally > $1.tally }
+                if $0.points != $1.points { return $0.points > $1.points }
+                return String(describing: $0.id) < String(describing: $1.id)
+            }
+            .map { $0.id }
+    }
+
+    var champion: PlayerId? {
+        monthlySummaries.isEmpty ? nil : rankedPlayers.first
+    }
 }
 
 struct SummaryView: View {
@@ -122,27 +144,9 @@ struct SummaryView: View {
     var total: (gg: Int, dd: Int, toto: Int, ggTally: Int, ddTally: Int, totoTally: Int) {
         annualSummary.total
     }
-    
+
     private var currentYear: Int {
         Calendar.current.component(.year, from: Date())
-    }
-
-    // Decide yearly ranking.
-    // Primary: yearly tallies; Secondary: total points (tie-breaker).
-    private func podiumOrder() -> [PlayerId] {
-        let candidates: [(id: PlayerId, tally: Int, points: Int)] = [
-            (.gg, total.ggTally, total.gg),
-            (.dd, total.ddTally, total.dd),
-            (.toto, total.totoTally, total.toto)
-        ]
-
-        return candidates
-            .sorted {
-                if $0.tally != $1.tally { return $0.tally > $1.tally }
-                if $0.points != $1.points { return $0.points > $1.points }
-                return String(describing: $0.id) < String(describing: $1.id)
-            }
-            .map { $0.id }
     }
 
     private func avatarView(for id: PlayerId, size: CGFloat) -> some View {
@@ -167,7 +171,7 @@ struct SummaryView: View {
         if year == currentYear || annualSummary.monthlySummaries.isEmpty {
             EmptyView() // hide for current year
         } else {
-            let order = podiumOrder()
+            let order = annualSummary.rankedPlayers
             if order.count != 3 {
                 EmptyView()
             } else {
@@ -886,3 +890,4 @@ private let firstYear = 2017
 private var currentYear: Int {
     Calendar.current.component(.year, from: Date())
 }
+

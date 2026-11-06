@@ -241,7 +241,7 @@ extension GameManager {
                             if let trumpCard = self.gameState.deck.last,
                                let trumpTwo = self.gameState.trumpCards.last {
                                 self.gameState.trumpSuit = trumpCard.suit
-                                withAnimation(.smooth(duration: 0.5)) {
+                                withAnimation(.easeInOut(duration: 0.5)) {
                                     trumpCard.isFaceDown = false
                                     trumpTwo.isFaceDown = true
                                     logger.log("Showing the trump card \(trumpCard)")
